@@ -120,8 +120,8 @@ async function fetchTicketSolver(ticketId, headers) {
 async function fetchAllTicketSolvers(ticketIds) {
   const headers = getAuthHeaders();
   const solvers = {};
-  const deadline = Date.now() + 30000; // 30-second budget (leave room for user info fetch)
-  const CONCURRENCY = 8;
+  const deadline = Date.now() + 40000; // 40-second budget
+  const CONCURRENCY = 10;
 
   for (let i = 0; i < ticketIds.length; i += CONCURRENCY) {
     if (Date.now() > deadline) {
@@ -173,30 +173,37 @@ async function fetchAgentSolves(weekStart, weekEnd) {
     return !(channel === 'api' && source.toLowerCase().includes('answer bot'));
   });
 
-  // Resolve who actually solved each ticket via per-ticket audits
-  const ticketIds = filtered.map((t) => t.id);
-  let solvers = {};
-  try {
-    solvers = await fetchAllTicketSolvers(ticketIds);
-  } catch (e) {
-    console.warn('Could not fetch ticket solvers, falling back to assignee:', e.message);
+  // Collect assignee IDs upfront so we can fetch their info in parallel with audits
+  const assigneeIds = new Set();
+  for (const ticket of filtered) {
+    if (ticket.assignee_id) assigneeIds.add(ticket.assignee_id);
   }
+
+  // Run audit resolution AND assignee user info fetch in PARALLEL
+  const ticketIds = filtered.map((t) => t.id);
+  const [solvers, usersMap] = await Promise.all([
+    fetchAllTicketSolvers(ticketIds).catch((e) => {
+      console.warn('Could not fetch ticket solvers, falling back to assignee:', e.message);
+      return {};
+    }),
+    fetchUserInfo([...assigneeIds]),
+  ]);
 
   const resolvedCount = Object.keys(solvers).length;
   console.log(
     `Solver resolution: ${resolvedCount}/${ticketIds.length} tickets resolved via audits`
   );
 
-  // Collect ALL unique user IDs (solvers + assignees) so we can look up roles
-  const allUserIds = new Set();
+  // Fetch info for any solver IDs that weren't assignees (small follow-up)
+  const missingSolverIds = new Set();
   for (const ticket of filtered) {
     const solverId = solvers[ticket.id];
-    if (solverId) allUserIds.add(solverId);
-    if (ticket.assignee_id) allUserIds.add(ticket.assignee_id);
+    if (solverId && !usersMap[solverId]) missingSolverIds.add(solverId);
   }
-
-  // Fetch user info (name + role) for all referenced users
-  const usersMap = await fetchUserInfo([...allUserIds]);
+  if (missingSolverIds.size > 0) {
+    const extraUsers = await fetchUserInfo([...missingSolverIds]);
+    Object.assign(usersMap, extraUsers);
+  }
 
   // Count by actual solver, using role to filter out non-agents.
   // If the audit solver is an end-user (customer), fall back to assignee.
