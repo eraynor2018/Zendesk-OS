@@ -200,6 +200,7 @@ export default function ZendeskReportGenerator() {
   const [newAgentName, setNewAgentName] = useState("");
   const [fetchLoading, setFetchLoading] = useState(false);
   const [fetchError, setFetchError] = useState("");
+  const [csatLoading, setCsatLoading] = useState(false);
 
   // Auto-suggest Friday-to-Friday CSAT dates when weekEnd changes
   useEffect(() => {
@@ -268,6 +269,33 @@ export default function ZendeskReportGenerator() {
       setFetchLoading(false);
     }
   }, [weekStart, weekEnd, csatStart, csatEnd]);
+
+  const fetchCsatOnly = useCallback(async () => {
+    if (!csatStart || !csatEnd) {
+      setFetchError("Please select both CSAT start and end dates.");
+      return;
+    }
+    setCsatLoading(true);
+    setFetchError("");
+    try {
+      const params = new URLSearchParams({ csatOnly: "true", csatStart, csatEnd });
+      const response = await fetch(`/api/zendesk-report?${params}`);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
+      }
+      const data = await response.json();
+      if (data.csat) {
+        setCsatScore(data.csat.score);
+        setCsatGood(data.csat.good.toString());
+        setCsatBad(data.csat.bad.toString());
+      }
+    } catch (err) {
+      setFetchError(err.message);
+    } finally {
+      setCsatLoading(false);
+    }
+  }, [csatStart, csatEnd]);
 
   const updateTrigger = (idx, val) => {
     const next = [...triggers];
@@ -730,6 +758,25 @@ export default function ZendeskReportGenerator() {
                 Fri-to-Fri window
               </div>
             )}
+            <button
+              onClick={fetchCsatOnly}
+              disabled={csatLoading || !csatStart || !csatEnd}
+              style={{
+                padding: "8px 16px",
+                background: csatLoading ? "#61716A" : "#02C874",
+                color: csatLoading ? "#fff" : "#253C32",
+                border: "none",
+                borderRadius: "6px",
+                fontSize: "13px",
+                fontWeight: 600,
+                cursor: csatLoading ? "not-allowed" : "pointer",
+                whiteSpace: "nowrap",
+                opacity: (!csatStart || !csatEnd) ? 0.5 : 1,
+                transition: "all 0.15s",
+              }}
+            >
+              {csatLoading ? "Fetching..." : "Fetch CSAT"}
+            </button>
           </div>
           <div style={{ display: "flex", gap: "12px" }}>
             <InputField label="CSAT Score" value={csatScore} onChange={setCsatScore} suffix="%" />
