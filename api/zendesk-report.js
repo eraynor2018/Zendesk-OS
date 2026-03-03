@@ -131,10 +131,12 @@ export default async function handler(req, res) {
     const supportGroupId = await fetchSupportGroupId();
 
     const createdQuery = `type:ticket created>=${weekStart} created<=${weekEnd} group:"support"`;
+    const solvedQuery = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
 
-    // Build parallel requests: created count + macro counts + optional CSAT
+    // Build parallel requests: created count + solved count + macro counts + optional CSAT
     const promises = [
       fetchCount(createdQuery),
+      fetchCount(solvedQuery),
       ...MACRO_TAGS.map((tag) =>
         fetchCount(`type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" tags:${tag}`)
       ),
@@ -148,8 +150,9 @@ export default async function handler(req, res) {
     const results = await Promise.all(promises);
 
     const createdTickets = results[0];
-    const macroCounts = results.slice(1, 1 + MACRO_TAGS.length);
-    const csat = hasCsat ? results[1 + MACRO_TAGS.length] : null;
+    const solvedTickets = results[1];
+    const macroCounts = results.slice(2, 2 + MACRO_TAGS.length);
+    const csat = hasCsat ? results[2 + MACRO_TAGS.length] : null;
 
     const macros = {};
     MACRO_TAGS.forEach((tag, i) => {
@@ -158,6 +161,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       createdTickets,
+      solvedTickets,
       macros,
       csat,
     });
