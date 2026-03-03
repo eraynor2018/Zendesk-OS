@@ -43,36 +43,6 @@ async function fetchCount(query) {
   return data.count;
 }
 
-/**
- * Get exact solved count by paginating search results and filtering out Answer Bot.
- * The count endpoint is approximate; this gives the real number.
- */
-async function fetchExactSolvedCount(weekStart, weekEnd) {
-  const headers = getAuthHeaders();
-  const query = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
-  let url = `${BASE_URL}/api/v2/search.json?query=${encodeURIComponent(query)}&per_page=100`;
-  let total = 0;
-
-  while (url) {
-    const res = await fetchWithRetry(url, headers);
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Zendesk search API error ${res.status}: ${text}`);
-    }
-    const data = await res.json();
-    for (const ticket of data.results || []) {
-      const channel = ticket.via?.channel;
-      const source = ticket.via?.source?.from?.title || '';
-      if (!(channel === 'api' && source.toLowerCase().includes('answer bot'))) {
-        total++;
-      }
-    }
-    url = data.next_page || null;
-  }
-
-  return total;
-}
-
 async function fetchSupportGroupId() {
   const url = `${BASE_URL}/api/v2/groups.json`;
   const res = await fetchWithRetry(url, getAuthHeaders());
@@ -162,10 +132,10 @@ export default async function handler(req, res) {
 
     const createdQuery = `type:ticket created>=${weekStart} created<=${weekEnd} group:"support"`;
 
-    // Build parallel requests: created count + exact solved count + macro counts + optional CSAT
+    // Build parallel requests: created count + macro counts + optional CSAT
+    // (solved count + agents come from /api/zendesk-agents to avoid rate limit competition)
     const promises = [
       fetchCount(createdQuery),
-      fetchExactSolvedCount(weekStart, weekEnd),
       ...MACRO_TAGS.map((tag) =>
         fetchCount(`type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" tags:${tag}`)
       ),
@@ -179,9 +149,8 @@ export default async function handler(req, res) {
     const results = await Promise.all(promises);
 
     const createdTickets = results[0];
-    const solvedTickets = results[1];
-    const macroCounts = results.slice(2, 2 + MACRO_TAGS.length);
-    const csat = hasCsat ? results[2 + MACRO_TAGS.length] : null;
+    const macroCounts = results.slice(1, 1 + MACRO_TAGS.length);
+    const csat = hasCsat ? results[1 + MACRO_TAGS.length] : null;
 
     const macros = {};
     MACRO_TAGS.forEach((tag, i) => {
@@ -190,7 +159,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       createdTickets,
-      solvedTickets,
       macros,
       csat,
     });

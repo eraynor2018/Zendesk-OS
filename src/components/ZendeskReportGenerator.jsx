@@ -199,6 +199,7 @@ export default function ZendeskReportGenerator() {
   const [showPreview, setShowPreview] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
   const [fetchLoading, setFetchLoading] = useState(false);
+  const [agentsLoading, setAgentsLoading] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [csatLoading, setCsatLoading] = useState(false);
 
@@ -221,21 +222,26 @@ export default function ZendeskReportGenerator() {
     }
 
     setFetchLoading(true);
+    setAgentsLoading(true);
     setFetchError("");
 
-    try {
-      const params = new URLSearchParams({ weekStart, weekEnd });
-      const response = await fetch(`/api/zendesk-report?${params}`);
+    const reportParams = new URLSearchParams({ weekStart, weekEnd });
+    const agentParams = new URLSearchParams({ weekStart, weekEnd });
 
+    // Fire both requests in parallel immediately
+    const reportPromise = fetch(`/api/zendesk-report?${reportParams}`);
+    const agentsPromise = fetch(`/api/zendesk-agents?${agentParams}`);
+
+    // Await report data first (fast — counts + macros)
+    try {
+      const response = await reportPromise;
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || `Server error: ${response.status}`);
       }
-
       const data = await response.json();
 
       setCreatedTickets(data.createdTickets.toString());
-      setSolvedTickets(data.solvedTickets.toString());
 
       setMacros((prev) =>
         prev.map((m) => ({
@@ -250,6 +256,28 @@ export default function ZendeskReportGenerator() {
       setFetchError(err.message);
     } finally {
       setFetchLoading(false);
+    }
+
+    // Then await agent data (slower — per-ticket audit resolution)
+    try {
+      const response = await agentsPromise;
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Agent data error: ${response.status}`);
+      }
+      const data = await response.json();
+
+      setSolvedTickets(data.solvedTickets.toString());
+      setAgents(
+        data.agents.map((a) => ({
+          name: a.name,
+          solved: a.solved.toString(),
+        }))
+      );
+    } catch (err) {
+      setFetchError((prev) => prev ? prev + " | " + err.message : err.message);
+    } finally {
+      setAgentsLoading(false);
     }
   }, [weekStart, weekEnd]);
 
@@ -480,22 +508,22 @@ export default function ZendeskReportGenerator() {
           </div>
           <button
             onClick={fetchZendeskData}
-            disabled={fetchLoading || !weekStart || !weekEnd}
+            disabled={fetchLoading || agentsLoading || !weekStart || !weekEnd}
             style={{
               padding: "8px 20px",
-              background: fetchLoading ? "#61716A" : "#02C874",
-              color: fetchLoading ? "#fff" : "#253C32",
+              background: (fetchLoading || agentsLoading) ? "#61716A" : "#02C874",
+              color: (fetchLoading || agentsLoading) ? "#fff" : "#253C32",
               border: "none",
               borderRadius: "6px",
               fontSize: "13px",
               fontWeight: 600,
-              cursor: fetchLoading ? "not-allowed" : "pointer",
+              cursor: (fetchLoading || agentsLoading) ? "not-allowed" : "pointer",
               whiteSpace: "nowrap",
               opacity: (!weekStart || !weekEnd) ? 0.5 : 1,
               transition: "all 0.15s",
             }}
           >
-            {fetchLoading ? "Fetching..." : "Fetch Data"}
+            {fetchLoading ? "Fetching..." : agentsLoading ? "Loading agents..." : "Fetch Data"}
           </button>
         </div>
 
@@ -572,6 +600,19 @@ export default function ZendeskReportGenerator() {
 
         {/* Agent Solves */}
         <Section title="Agent Solves" icon="👤">
+          {agentsLoading && (
+            <div style={{
+              fontSize: "13px",
+              color: "#61716A",
+              padding: "8px 12px",
+              marginBottom: "12px",
+              background: "#f8fffc",
+              borderRadius: "6px",
+              border: "1px solid #e8f0ec",
+            }}>
+              ⏳ Loading agent data from ticket audits...
+            </div>
+          )}
           <div style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",

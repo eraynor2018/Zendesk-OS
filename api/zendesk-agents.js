@@ -14,11 +14,11 @@ function getAuthHeaders() {
   };
 }
 
-async function fetchWithRetry(url, headers, maxRetries = 3) {
+async function fetchWithRetry(url, headers, maxRetries = 3, maxDelay = 10) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const res = await fetch(url, { headers });
     if (res.status === 429 && attempt < maxRetries) {
-      const retryAfter = parseInt(res.headers.get('Retry-After') || '5', 10);
+      const retryAfter = Math.min(parseInt(res.headers.get('Retry-After') || '2', 10), maxDelay);
       await new Promise((r) => setTimeout(r, retryAfter * 1000));
       continue;
     }
@@ -62,7 +62,7 @@ async function fetchTicketSolver(ticketId, headers) {
 
   while (url && pages < 3) {
     pages++;
-    const res = await fetchWithRetry(url, headers, 1);
+    const res = await fetchWithRetry(url, headers, 1, 2);
     if (!res || !res.ok) break;
     const data = await res.json();
 
