@@ -43,7 +43,12 @@ async function fetchCount(query) {
   return data.count;
 }
 
-async function fetchUserNames(userIds) {
+/**
+ * Fetch user info (name + role) for a list of user IDs.
+ * Returns { [id]: { name, role } }.
+ * role is "end-user", "agent", or "admin".
+ */
+async function fetchUserInfo(userIds) {
   if (userIds.length === 0) return {};
   const headers = getAuthHeaders();
   const usersMap = {};
@@ -56,7 +61,7 @@ async function fetchUserNames(userIds) {
     if (res.ok) {
       const data = await res.json();
       for (const user of data.users || []) {
-        usersMap[user.id] = user.name;
+        usersMap[user.id] = { name: user.name, role: user.role };
       }
     }
   }
@@ -73,29 +78,6 @@ async function fetchSupportGroupId() {
     (g) => g.name.toLowerCase() === 'support'
   );
   return supportGroup ? supportGroup.id : null;
-}
-
-/**
- * Fetch the set of user IDs who are members of the support group.
- * Used to filter out non-agent solvers (customers, end-users, bots).
- */
-async function fetchSupportAgentIds(supportGroupId) {
-  if (!supportGroupId) return null;
-  const headers = getAuthHeaders();
-  const agentIds = new Set();
-  let url = `${BASE_URL}/api/v2/group_memberships.json?group_id=${supportGroupId}&per_page=100`;
-
-  while (url) {
-    const res = await fetchWithRetry(url, headers);
-    if (!res.ok) return null;
-    const data = await res.json();
-    for (const membership of data.group_memberships || []) {
-      agentIds.add(membership.user_id);
-    }
-    url = data.next_page || null;
-  }
-
-  return agentIds;
 }
 
 /**
@@ -167,7 +149,7 @@ async function fetchAllTicketSolvers(ticketIds) {
   return solvers;
 }
 
-async function fetchAgentSolves(weekStart, weekEnd, supportAgentIds) {
+async function fetchAgentSolves(weekStart, weekEnd) {
   const headers = getAuthHeaders();
   const query = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
   let allResults = [];
@@ -205,30 +187,37 @@ async function fetchAgentSolves(weekStart, weekEnd, supportAgentIds) {
     `Solver resolution: ${resolvedCount}/${ticketIds.length} tickets resolved via audits`
   );
 
-  // Count by actual solver, filtered to support group agents only.
-  // If the audit solver is a non-agent (customer, bot), fall back to assignee.
+  // Collect ALL unique user IDs (solvers + assignees) so we can look up roles
+  const allUserIds = new Set();
+  for (const ticket of filtered) {
+    const solverId = solvers[ticket.id];
+    if (solverId) allUserIds.add(solverId);
+    if (ticket.assignee_id) allUserIds.add(ticket.assignee_id);
+  }
+
+  // Fetch user info (name + role) for all referenced users
+  const usersMap = await fetchUserInfo([...allUserIds]);
+
+  // Count by actual solver, using role to filter out non-agents.
+  // If the audit solver is an end-user (customer), fall back to assignee.
   const agentIdCounts = {};
   for (const ticket of filtered) {
     let solverId = solvers[ticket.id] || ticket.assignee_id;
 
-    // If solver isn't a support agent, fall back to the ticket assignee
-    if (supportAgentIds && solverId && !supportAgentIds.has(solverId)) {
+    // If solver is an end-user, fall back to the ticket assignee
+    if (solverId && usersMap[solverId]?.role === 'end-user') {
       solverId = ticket.assignee_id;
     }
 
-    // Only count if the final solver is a support agent
-    if (solverId && (!supportAgentIds || supportAgentIds.has(solverId))) {
+    // Only count if the final solver is NOT an end-user
+    if (solverId && usersMap[solverId]?.role !== 'end-user') {
       agentIdCounts[solverId] = (agentIdCounts[solverId] || 0) + 1;
     }
   }
 
-  // Resolve IDs to names
-  const uniqueIds = Object.keys(agentIdCounts).map(Number);
-  const usersMap = await fetchUserNames(uniqueIds);
-
   const agents = Object.entries(agentIdCounts)
     .map(([id, solved]) => ({
-      name: usersMap[Number(id)] || `Agent ${id}`,
+      name: usersMap[Number(id)]?.name || `Agent ${id}`,
       solved,
     }))
     .sort((a, b) => b.solved - a.solved);
@@ -312,9 +301,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Fetch support group ID + member list (needed for agent filtering and CSAT)
+    // Fetch support group ID (needed for CSAT group filtering)
     const supportGroupId = await fetchSupportGroupId();
-    const supportAgentIds = await fetchSupportAgentIds(supportGroupId);
 
     const createdQuery = `type:ticket created>=${weekStart} created<=${weekEnd} group:"support"`;
 
@@ -324,7 +312,7 @@ export default async function handler(req, res) {
       ...MACRO_TAGS.map((tag) =>
         fetchCount(`type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" tags:${tag}`)
       ),
-      fetchAgentSolves(weekStart, weekEnd, supportAgentIds),
+      fetchAgentSolves(weekStart, weekEnd),
     ];
 
     // Add CSAT if dates provided
