@@ -76,6 +76,29 @@ async function fetchSupportGroupId() {
 }
 
 /**
+ * Fetch the set of user IDs who are members of the support group.
+ * Used to filter out non-agent solvers (customers, end-users, bots).
+ */
+async function fetchSupportAgentIds(supportGroupId) {
+  if (!supportGroupId) return null;
+  const headers = getAuthHeaders();
+  const agentIds = new Set();
+  let url = `${BASE_URL}/api/v2/group_memberships.json?group_id=${supportGroupId}&per_page=100`;
+
+  while (url) {
+    const res = await fetchWithRetry(url, headers);
+    if (!res.ok) return null;
+    const data = await res.json();
+    for (const membership of data.group_memberships || []) {
+      agentIds.add(membership.user_id);
+    }
+    url = data.next_page || null;
+  }
+
+  return agentIds;
+}
+
+/**
  * Fetch the audit trail for a single ticket and find who solved it.
  * Returns the author_id of the last status→solved event, or null.
  * Audits are in chronological order; we keep the last solve author.
@@ -144,7 +167,7 @@ async function fetchAllTicketSolvers(ticketIds) {
   return solvers;
 }
 
-async function fetchAgentSolves(weekStart, weekEnd) {
+async function fetchAgentSolves(weekStart, weekEnd, supportAgentIds) {
   const headers = getAuthHeaders();
   const query = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
   let allResults = [];
@@ -182,11 +205,19 @@ async function fetchAgentSolves(weekStart, weekEnd) {
     `Solver resolution: ${resolvedCount}/${ticketIds.length} tickets resolved via audits`
   );
 
-  // Count by actual solver (falls back to assignee for unresolved tickets)
+  // Count by actual solver, filtered to support group agents only.
+  // If the audit solver is a non-agent (customer, bot), fall back to assignee.
   const agentIdCounts = {};
   for (const ticket of filtered) {
-    const solverId = solvers[ticket.id] || ticket.assignee_id;
-    if (solverId) {
+    let solverId = solvers[ticket.id] || ticket.assignee_id;
+
+    // If solver isn't a support agent, fall back to the ticket assignee
+    if (supportAgentIds && solverId && !supportAgentIds.has(solverId)) {
+      solverId = ticket.assignee_id;
+    }
+
+    // Only count if the final solver is a support agent
+    if (solverId && (!supportAgentIds || supportAgentIds.has(solverId))) {
       agentIdCounts[solverId] = (agentIdCounts[solverId] || 0) + 1;
     }
   }
@@ -281,8 +312,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Fetch support group ID first (needed for CSAT group filtering)
+    // Fetch support group ID + member list (needed for agent filtering and CSAT)
     const supportGroupId = await fetchSupportGroupId();
+    const supportAgentIds = await fetchSupportAgentIds(supportGroupId);
 
     const createdQuery = `type:ticket created>=${weekStart} created<=${weekEnd} group:"support"`;
 
@@ -292,7 +324,7 @@ export default async function handler(req, res) {
       ...MACRO_TAGS.map((tag) =>
         fetchCount(`type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" tags:${tag}`)
       ),
-      fetchAgentSolves(weekStart, weekEnd),
+      fetchAgentSolves(weekStart, weekEnd, supportAgentIds),
     ];
 
     // Add CSAT if dates provided
