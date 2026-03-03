@@ -48,12 +48,33 @@ async function fetchCount(query) {
   return data.count;
 }
 
+async function fetchUserNames(userIds) {
+  if (userIds.length === 0) return {};
+  const headers = getAuthHeaders();
+  const usersMap = {};
+
+  // Zendesk show many users endpoint accepts up to 100 IDs
+  const batchSize = 100;
+  for (let i = 0; i < userIds.length; i += batchSize) {
+    const batch = userIds.slice(i, i + batchSize);
+    const url = `${BASE_URL}/api/v2/users/show_many.json?ids=${batch.join(',')}`;
+    const res = await fetchWithRetry(url, headers);
+    if (res.ok) {
+      const data = await res.json();
+      for (const user of data.users || []) {
+        usersMap[user.id] = user.name;
+      }
+    }
+  }
+
+  return usersMap;
+}
+
 async function fetchAgentSolves(weekStart, weekEnd) {
   const headers = getAuthHeaders();
   const query = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
   let allResults = [];
-  let usersMap = {};
-  let url = `${BASE_URL}/api/v2/search.json?query=${encodeURIComponent(query)}&include=users&per_page=100`;
+  let url = `${BASE_URL}/api/v2/search.json?query=${encodeURIComponent(query)}&per_page=100`;
 
   while (url) {
     const res = await fetchWithRetry(url, headers);
@@ -63,13 +84,6 @@ async function fetchAgentSolves(weekStart, weekEnd) {
     }
     const data = await res.json();
     allResults.push(...(data.results || []));
-
-    if (data.users) {
-      for (const user of data.users) {
-        usersMap[user.id] = user.name;
-      }
-    }
-
     url = data.next_page || null;
   }
 
@@ -80,16 +94,23 @@ async function fetchAgentSolves(weekStart, weekEnd) {
     return channel !== 'api' || !source.toLowerCase().includes('answer bot');
   });
 
-  const agentCounts = {};
+  // Count by assignee ID first
+  const agentIdCounts = {};
   for (const ticket of filtered) {
     if (ticket.assignee_id) {
-      const name = usersMap[ticket.assignee_id] || `Agent ${ticket.assignee_id}`;
-      agentCounts[name] = (agentCounts[name] || 0) + 1;
+      agentIdCounts[ticket.assignee_id] = (agentIdCounts[ticket.assignee_id] || 0) + 1;
     }
   }
 
-  return Object.entries(agentCounts)
-    .map(([name, solved]) => ({ name, solved }))
+  // Resolve assignee IDs to names
+  const uniqueIds = Object.keys(agentIdCounts).map(Number);
+  const usersMap = await fetchUserNames(uniqueIds);
+
+  return Object.entries(agentIdCounts)
+    .map(([id, solved]) => ({
+      name: usersMap[Number(id)] || `Agent ${id}`,
+      solved,
+    }))
     .sort((a, b) => b.solved - a.solved);
 }
 
