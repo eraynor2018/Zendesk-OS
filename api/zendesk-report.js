@@ -120,7 +120,7 @@ async function fetchTicketSolver(ticketId, headers) {
 async function fetchAllTicketSolvers(ticketIds) {
   const headers = getAuthHeaders();
   const solvers = {};
-  const deadline = Date.now() + 45000; // 45-second budget
+  const deadline = Date.now() + 30000; // 30-second budget (leave room for user info fetch)
   const CONCURRENCY = 8;
 
   for (let i = 0; i < ticketIds.length; i += CONCURRENCY) {
