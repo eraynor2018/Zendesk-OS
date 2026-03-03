@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 
 const INITIAL_AGENTS = [
   { name: "Red", solved: "" },
@@ -22,8 +22,8 @@ const INITIAL_MACROS = [
   { tag: "swap_updates", label: "Swap updates", count: "" },
   { tag: "delinquent_account", label: "Delinquent accounts", count: "" },
   { tag: "transactional", label: "Transactional", count: "" },
-  { tag: "shipping", label: "Shipping label updates", count: "" },
-  { tag: "shipping_issues", label: "Customer shipping issues", count: "" },
+  { tag: "revised_label", label: "Shipping label updates", count: "" },
+  { tag: "shipping", label: "Customer shipping issues", count: "" },
   { tag: "dispute", label: "Disputes", count: "" },
   { tag: "2fa", label: "2FA", count: "" },
   { tag: "account_updates", label: "Account updates", count: "" },
@@ -190,6 +190,8 @@ export default function ZendeskReportGenerator() {
   const [triggers, setTriggers] = useState(INITIAL_TRIGGERS);
   const [agents, setAgents] = useState(INITIAL_AGENTS);
   const [macros, setMacros] = useState(INITIAL_MACROS);
+  const [csatStart, setCsatStart] = useState("");
+  const [csatEnd, setCsatEnd] = useState("");
   const [csatScore, setCsatScore] = useState("");
   const [csatGood, setCsatGood] = useState("");
   const [csatBad, setCsatBad] = useState("");
@@ -198,6 +200,18 @@ export default function ZendeskReportGenerator() {
   const [newAgentName, setNewAgentName] = useState("");
   const [fetchLoading, setFetchLoading] = useState(false);
   const [fetchError, setFetchError] = useState("");
+
+  // Auto-suggest Friday-to-Friday CSAT dates when weekEnd changes
+  useEffect(() => {
+    if (!weekEnd) return;
+    const endDate = new Date(weekEnd + "T12:00:00");
+    const lastFri = getLastFriday(endDate);
+    const prevFri = new Date(lastFri);
+    prevFri.setDate(prevFri.getDate() - 7);
+    const toYMD = (d) => d.toISOString().split("T")[0];
+    setCsatStart(toYMD(prevFri));
+    setCsatEnd(toYMD(lastFri));
+  }, [weekEnd]);
 
   const fetchZendeskData = useCallback(async () => {
     if (!weekStart || !weekEnd) {
@@ -210,6 +224,10 @@ export default function ZendeskReportGenerator() {
 
     try {
       const params = new URLSearchParams({ weekStart, weekEnd });
+      if (csatStart && csatEnd) {
+        params.set("csatStart", csatStart);
+        params.set("csatEnd", csatEnd);
+      }
       const response = await fetch(`/api/zendesk-report?${params}`);
 
       if (!response.ok) {
@@ -239,15 +257,17 @@ export default function ZendeskReportGenerator() {
         }))
       );
 
-      setCsatScore(data.csat.score);
-      setCsatGood(data.csat.good.toString());
-      setCsatBad(data.csat.bad.toString());
+      if (data.csat) {
+        setCsatScore(data.csat.score);
+        setCsatGood(data.csat.good.toString());
+        setCsatBad(data.csat.bad.toString());
+      }
     } catch (err) {
       setFetchError(err.message);
     } finally {
       setFetchLoading(false);
     }
-  }, [weekStart, weekEnd]);
+  }, [weekStart, weekEnd, csatStart, csatEnd]);
 
   const updateTrigger = (idx, val) => {
     const next = [...triggers];
@@ -287,11 +307,10 @@ export default function ZendeskReportGenerator() {
   const csatTotal = (parseInt(csatGood) || 0) + (parseInt(csatBad) || 0);
 
   const csatDateLabel = useMemo(() => {
-    if (!weekEnd) return "";
-    const endDate = new Date(weekEnd + "T12:00:00");
-    const lastFri = getLastFriday(endDate);
-    return `through ${formatDate(lastFri)}`;
-  }, [weekEnd]);
+    if (!csatEnd) return "";
+    const endDate = new Date(csatEnd + "T12:00:00");
+    return `through ${formatDate(endDate)}`;
+  }, [csatEnd]);
 
   const generateSlackReport = useCallback(() => {
     const activeMacros = macros.filter(m => parseInt(m.count) > 0).sort((a, b) => parseInt(b.count) - parseInt(a.count));
@@ -448,19 +467,6 @@ export default function ZendeskReportGenerator() {
               }}
             />
           </div>
-          {weekEnd && csatDateLabel && (
-            <div style={{
-              fontSize: "11px",
-              color: "#61716A",
-              background: "#f8fffc",
-              padding: "8px 12px",
-              borderRadius: "6px",
-              border: "1px solid #e8f0ec",
-              whiteSpace: "nowrap",
-            }}>
-              CSAT window: {csatDateLabel}
-            </div>
-          )}
           <button
             onClick={fetchZendeskData}
             disabled={fetchLoading || !weekStart || !weekEnd}
@@ -672,16 +678,59 @@ export default function ZendeskReportGenerator() {
 
         {/* CSAT */}
         <Section title="Customer Satisfaction" icon="⭐">
-          {csatDateLabel && (
-            <div style={{
-              fontSize: "12px",
-              color: "#61716A",
-              marginBottom: "12px",
-              fontStyle: "italic",
-            }}>
-              Reporting period: {csatDateLabel}
+          <div style={{ display: "flex", gap: "12px", marginBottom: "16px", alignItems: "flex-end" }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: "#61716A", marginBottom: "5px" }}>CSAT Start</label>
+              <input
+                type="date"
+                value={csatStart}
+                onChange={e => setCsatStart(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  border: "1px solid #CFDCD6",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                  color: "#253C32",
+                  outline: "none",
+                  background: "#fff",
+                  boxSizing: "border-box",
+                }}
+              />
             </div>
-          )}
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: "#61716A", marginBottom: "5px" }}>CSAT End</label>
+              <input
+                type="date"
+                value={csatEnd}
+                onChange={e => setCsatEnd(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  border: "1px solid #CFDCD6",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                  color: "#253C32",
+                  outline: "none",
+                  background: "#fff",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+            {csatStart && csatEnd && (
+              <div style={{
+                fontSize: "11px",
+                color: "#61716A",
+                background: "#f8fffc",
+                padding: "8px 12px",
+                borderRadius: "6px",
+                border: "1px solid #e8f0ec",
+                whiteSpace: "nowrap",
+              }}>
+                Fri-to-Fri window
+              </div>
+            )}
+          </div>
           <div style={{ display: "flex", gap: "12px" }}>
             <InputField label="CSAT Score" value={csatScore} onChange={setCsatScore} suffix="%" />
             <InputField label="Good Ratings" value={csatGood} onChange={setCsatGood} />

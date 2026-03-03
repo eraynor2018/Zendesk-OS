@@ -2,7 +2,7 @@ const BASE_URL = 'https://sidelineswap.zendesk.com';
 
 const MACRO_TAGS = [
   'how_to', 'swap_updates', 'delinquent_account', 'transactional',
-  'shipping', 'shipping_issues', 'dispute', '2fa', 'account_updates',
+  'revised_label', 'shipping', 'dispute', '2fa', 'account_updates',
   'fraud', 'bug', 'cashout', 'tariffs', 'account_access', 'w9',
 ];
 
@@ -14,15 +14,6 @@ function getAuthHeaders() {
     Authorization: `Basic ${auth}`,
     'Content-Type': 'application/json',
   };
-}
-
-function getLastFriday(fromDate) {
-  const d = new Date(fromDate);
-  const day = d.getDay();
-  const diff = day >= 5 ? day - 5 : day + 2;
-  d.setDate(d.getDate() - diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 async function fetchWithRetry(url, headers, maxRetries = 2) {
@@ -87,14 +78,14 @@ async function fetchAgentSolves(weekStart, weekEnd) {
     url = data.next_page || null;
   }
 
-  // Filter out Answer Bot tickets if via channel info is available
+  // Filter out Answer Bot tickets
   const filtered = allResults.filter((ticket) => {
     const channel = ticket.via?.channel;
     const source = ticket.via?.source?.from?.title || '';
-    return channel !== 'api' || !source.toLowerCase().includes('answer bot');
+    return !(channel === 'api' && source.toLowerCase().includes('answer bot'));
   });
 
-  // Count by assignee ID first
+  // Count by assignee ID
   const agentIdCounts = {};
   for (const ticket of filtered) {
     if (ticket.assignee_id) {
@@ -106,21 +97,27 @@ async function fetchAgentSolves(weekStart, weekEnd) {
   const uniqueIds = Object.keys(agentIdCounts).map(Number);
   const usersMap = await fetchUserNames(uniqueIds);
 
-  return Object.entries(agentIdCounts)
+  const agents = Object.entries(agentIdCounts)
     .map(([id, solved]) => ({
       name: usersMap[Number(id)] || `Agent ${id}`,
       solved,
     }))
     .sort((a, b) => b.solved - a.solved);
+
+  // Solved total = sum of agent solves (matches Zendesk "Agent Updates" total)
+  const solvedTickets = agents.reduce((sum, a) => sum + a.solved, 0);
+
+  return { agents, solvedTickets };
 }
 
-async function fetchCsatData(weekEnd) {
-  const lastFri = getLastFriday(new Date(weekEnd + 'T12:00:00'));
-  const prevFri = new Date(lastFri);
-  prevFri.setDate(prevFri.getDate() - 7);
+async function fetchCsatData(csatStart, csatEnd) {
+  const startDate = new Date(csatStart + 'T00:00:00Z');
+  const endDate = new Date(csatEnd + 'T00:00:00Z');
+  // Add 24h to end date to include the full last day
+  endDate.setDate(endDate.getDate() + 1);
 
-  const startTime = Math.floor(prevFri.getTime() / 1000);
-  const endTime = Math.floor(lastFri.getTime() / 1000);
+  const startTime = Math.floor(startDate.getTime() / 1000);
+  const endTime = Math.floor(endDate.getTime() / 1000);
 
   const headers = getAuthHeaders();
   let good = 0;
@@ -151,7 +148,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { weekStart, weekEnd } = req.query;
+  const { weekStart, weekEnd, csatStart, csatEnd } = req.query;
   if (!weekStart || !weekEnd) {
     return res.status(400).json({ error: 'weekStart and weekEnd are required' });
   }
@@ -167,23 +164,28 @@ export default async function handler(req, res) {
 
   try {
     const createdQuery = `type:ticket created>=${weekStart} created<=${weekEnd} group:"support"`;
-    const solvedQuery = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
 
-    const results = await Promise.all([
+    // Build parallel requests: created count + macro counts + agent solves
+    const promises = [
       fetchCount(createdQuery),
-      fetchCount(solvedQuery),
       ...MACRO_TAGS.map((tag) =>
         fetchCount(`type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" tags:${tag}`)
       ),
       fetchAgentSolves(weekStart, weekEnd),
-      fetchCsatData(weekEnd),
-    ]);
+    ];
+
+    // Add CSAT if dates provided
+    const hasCsat = csatStart && csatEnd && dateRegex.test(csatStart) && dateRegex.test(csatEnd);
+    if (hasCsat) {
+      promises.push(fetchCsatData(csatStart, csatEnd));
+    }
+
+    const results = await Promise.all(promises);
 
     const createdTickets = results[0];
-    const solvedTickets = results[1];
-    const macroCounts = results.slice(2, 2 + MACRO_TAGS.length);
-    const agents = results[2 + MACRO_TAGS.length];
-    const csat = results[2 + MACRO_TAGS.length + 1];
+    const macroCounts = results.slice(1, 1 + MACRO_TAGS.length);
+    const agentData = results[1 + MACRO_TAGS.length];
+    const csat = hasCsat ? results[1 + MACRO_TAGS.length + 1] : null;
 
     const macros = {};
     MACRO_TAGS.forEach((tag, i) => {
@@ -192,8 +194,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       createdTickets,
-      solvedTickets,
-      agents,
+      solvedTickets: agentData.solvedTickets,
+      agents: agentData.agents,
       macros,
       csat,
     });
