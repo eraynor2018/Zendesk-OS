@@ -62,7 +62,7 @@ async function fetchTicketSolver(ticketId, headers) {
 
   while (url && pages < 3) {
     pages++;
-    const res = await fetchWithRetry(url, headers, 1, 2);
+    const res = await fetchWithRetry(url, headers, 2, 2);
     if (!res || !res.ok) break;
     const data = await res.json();
 

@@ -276,16 +276,23 @@ export default function ZendeskReportGenerator() {
         chunks.push(ticketIds.slice(i, i + CHUNK_SIZE));
       }
 
-      // Fire all audit batches in parallel
-      const auditResults = await Promise.allSettled(
-        chunks.map((chunk) =>
-          fetch(`/api/zendesk-agents?mode=audit&ticketIds=${chunk.join(",")}`)
-            .then((r) => {
-              if (!r.ok) throw new Error(`Audit batch error: ${r.status}`);
-              return r.json();
-            })
-        )
-      );
+      // Fire audit batches 2 at a time to reduce Zendesk rate limit pressure
+      // (all 4 at once causes 429s → failed audits → fallback to assignee)
+      const PARALLEL_BATCHES = 2;
+      const auditResults = [];
+      for (let i = 0; i < chunks.length; i += PARALLEL_BATCHES) {
+        const batchGroup = chunks.slice(i, i + PARALLEL_BATCHES);
+        const groupResults = await Promise.allSettled(
+          batchGroup.map((chunk) =>
+            fetch(`/api/zendesk-agents?mode=audit&ticketIds=${chunk.join(",")}`)
+              .then((r) => {
+                if (!r.ok) throw new Error(`Audit batch error: ${r.status}`);
+                return r.json();
+              })
+          )
+        );
+        auditResults.push(...groupResults);
+      }
 
       // Merge solver maps and user info from all batches
       const allSolvers = {};
