@@ -3,6 +3,9 @@
   "functions": {
     "api/zendesk-report.js": {
       "maxDuration": 60
+    },
+    "api/zendesk-agents.js": {
+      "maxDuration": 60
     }
   }
 }
