@@ -83,12 +83,12 @@ async function fetchTicketSolver(ticketId, headers) {
 
 /**
  * Resolve actual solvers for a list of tickets using per-ticket audits.
- * This endpoint is dedicated to this work, so it gets the full time budget.
+ * Budget is generous since each call only handles a batch (~150 tickets).
  */
 async function fetchAllTicketSolvers(ticketIds) {
   const headers = getAuthHeaders();
   const solvers = {};
-  const deadline = Date.now() + 48000; // 48-second budget (dedicated endpoint)
+  const deadline = Date.now() + 50000; // 50-second budget per batch
   const CONCURRENCY = 8;
 
   for (let i = 0; i < ticketIds.length; i += CONCURRENCY) {
@@ -122,104 +122,95 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { weekStart, weekEnd } = req.query;
+  const { mode, weekStart, weekEnd, ticketIds: ticketIdsParam } = req.query;
 
   if (!process.env.ZENDESK_API_EMAIL || !process.env.ZENDESK_API_TOKEN) {
     return res.status(500).json({ error: 'Zendesk credentials not configured' });
   }
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-  if (!weekStart || !weekEnd || !dateRegex.test(weekStart) || !dateRegex.test(weekEnd)) {
-    return res.status(400).json({ error: 'weekStart and weekEnd are required in YYYY-MM-DD format' });
+
+  // ── MODE: SEARCH ────────────────────────────────────────────────────
+  // Fast phase: search for solved tickets, filter Answer Bot, return
+  // ticket list + user info for all assignees. (~10s)
+  if (mode === 'search') {
+    if (!weekStart || !weekEnd || !dateRegex.test(weekStart) || !dateRegex.test(weekEnd)) {
+      return res.status(400).json({ error: 'weekStart and weekEnd required in YYYY-MM-DD format' });
+    }
+
+    try {
+      const headers = getAuthHeaders();
+      const query = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
+      let allResults = [];
+      let url = `${BASE_URL}/api/v2/search.json?query=${encodeURIComponent(query)}&per_page=100`;
+
+      while (url) {
+        const r = await fetchWithRetry(url, headers);
+        if (!r.ok) {
+          const text = await r.text().catch(() => '');
+          throw new Error(`Zendesk search API error ${r.status}: ${text}`);
+        }
+        const data = await r.json();
+        allResults.push(...(data.results || []));
+        url = data.next_page || null;
+      }
+
+      // Filter out Answer Bot tickets
+      const filtered = allResults.filter((ticket) => {
+        const channel = ticket.via?.channel;
+        const source = ticket.via?.source?.from?.title || '';
+        return !(channel === 'api' && source.toLowerCase().includes('answer bot'));
+      });
+
+      // Collect assignee IDs and fetch user info
+      const assigneeIds = new Set();
+      for (const ticket of filtered) {
+        if (ticket.assignee_id) assigneeIds.add(ticket.assignee_id);
+      }
+      const users = await fetchUserInfo([...assigneeIds]);
+
+      // Return minimal ticket data + user info
+      const tickets = filtered.map((t) => ({ id: t.id, assignee_id: t.assignee_id }));
+
+      console.log(`Search complete: ${tickets.length} tickets, ${Object.keys(users).length} users`);
+      return res.status(200).json({ tickets, users });
+    } catch (err) {
+      console.error('Zendesk search error:', err);
+      return res.status(502).json({ error: 'Failed to search tickets', details: err.message });
+    }
   }
 
-  try {
-    const headers = getAuthHeaders();
-    const query = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
-    let allResults = [];
-    let url = `${BASE_URL}/api/v2/search.json?query=${encodeURIComponent(query)}&per_page=100`;
-
-    while (url) {
-      const r = await fetchWithRetry(url, headers);
-      if (!r.ok) {
-        const text = await r.text().catch(() => '');
-        throw new Error(`Zendesk search API error ${r.status}: ${text}`);
-      }
-      const data = await r.json();
-      allResults.push(...(data.results || []));
-      url = data.next_page || null;
+  // ── MODE: AUDIT ─────────────────────────────────────────────────────
+  // Slow phase: audit a batch of ticket IDs to find who solved each one.
+  // Called multiple times in parallel with ~150 tickets each. (~15-25s)
+  if (mode === 'audit') {
+    if (!ticketIdsParam) {
+      return res.status(400).json({ error: 'ticketIds parameter required' });
     }
 
-    // Filter out Answer Bot tickets
-    const filtered = allResults.filter((ticket) => {
-      const channel = ticket.via?.channel;
-      const source = ticket.via?.source?.from?.title || '';
-      return !(channel === 'api' && source.toLowerCase().includes('answer bot'));
-    });
-
-    // Collect assignee IDs for parallel fetch
-    const assigneeIds = new Set();
-    for (const ticket of filtered) {
-      if (ticket.assignee_id) assigneeIds.add(ticket.assignee_id);
+    const ids = ticketIdsParam.split(',').map(Number).filter(Boolean);
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'No valid ticket IDs provided' });
     }
 
-    // Run audit resolution AND assignee info fetch in PARALLEL
-    const ticketIds = filtered.map((t) => t.id);
-    const [solvers, usersMap] = await Promise.all([
-      fetchAllTicketSolvers(ticketIds).catch((e) => {
-        console.warn('Could not fetch ticket solvers, falling back to assignee:', e.message);
-        return {};
-      }),
-      fetchUserInfo([...assigneeIds]),
-    ]);
+    try {
+      const solvers = await fetchAllTicketSolvers(ids);
 
-    const resolvedCount = Object.keys(solvers).length;
-    console.log(
-      `Solver resolution: ${resolvedCount}/${ticketIds.length} tickets resolved via audits`
-    );
+      // Fetch user info for any solver IDs discovered via audits
+      const solverUserIds = [...new Set(Object.values(solvers))];
+      const users = solverUserIds.length > 0 ? await fetchUserInfo(solverUserIds) : {};
 
-    // Fetch info for solver IDs that weren't assignees
-    const missingSolverIds = new Set();
-    for (const ticket of filtered) {
-      const solverId = solvers[ticket.id];
-      if (solverId && !usersMap[solverId]) missingSolverIds.add(solverId);
+      const resolvedCount = Object.keys(solvers).length;
+      console.log(`Audit batch complete: ${resolvedCount}/${ids.length} tickets resolved`);
+
+      return res.status(200).json({ solvers, users });
+    } catch (err) {
+      console.error('Zendesk audit error:', err);
+      return res.status(502).json({ error: 'Failed to audit tickets', details: err.message });
     }
-    if (missingSolverIds.size > 0) {
-      const extraUsers = await fetchUserInfo([...missingSolverIds]);
-      Object.assign(usersMap, extraUsers);
-    }
-
-    // Count by actual solver, using role to filter out non-agents
-    const agentIdCounts = {};
-    for (const ticket of filtered) {
-      let solverId = solvers[ticket.id] || ticket.assignee_id;
-
-      // If solver is an end-user, fall back to the ticket assignee
-      if (solverId && usersMap[solverId]?.role === 'end-user') {
-        solverId = ticket.assignee_id;
-      }
-
-      // Only count if the final solver is NOT an end-user
-      if (solverId && usersMap[solverId]?.role !== 'end-user') {
-        agentIdCounts[solverId] = (agentIdCounts[solverId] || 0) + 1;
-      }
-    }
-
-    const agents = Object.entries(agentIdCounts)
-      .map(([id, solved]) => ({
-        name: usersMap[Number(id)]?.name || `Agent ${id}`,
-        solved,
-      }))
-      .sort((a, b) => b.solved - a.solved);
-
-    const solvedTickets = agents.reduce((sum, a) => sum + a.solved, 0);
-
-    return res.status(200).json({ agents, solvedTickets });
-  } catch (err) {
-    console.error('Zendesk agents error:', err);
-    return res.status(502).json({
-      error: 'Failed to fetch agent data from Zendesk',
-      details: err.message,
-    });
   }
+
+  return res.status(400).json({
+    error: 'mode parameter required: "search" or "audit"',
+  });
 }
