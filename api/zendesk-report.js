@@ -43,6 +43,36 @@ async function fetchCount(query) {
   return data.count;
 }
 
+/**
+ * Get exact solved count by paginating search results and filtering out Answer Bot.
+ * The count endpoint is approximate; this gives the real number.
+ */
+async function fetchExactSolvedCount(weekStart, weekEnd) {
+  const headers = getAuthHeaders();
+  const query = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
+  let url = `${BASE_URL}/api/v2/search.json?query=${encodeURIComponent(query)}&per_page=100`;
+  let total = 0;
+
+  while (url) {
+    const res = await fetchWithRetry(url, headers);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Zendesk search API error ${res.status}: ${text}`);
+    }
+    const data = await res.json();
+    for (const ticket of data.results || []) {
+      const channel = ticket.via?.channel;
+      const source = ticket.via?.source?.from?.title || '';
+      if (!(channel === 'api' && source.toLowerCase().includes('answer bot'))) {
+        total++;
+      }
+    }
+    url = data.next_page || null;
+  }
+
+  return total;
+}
+
 async function fetchSupportGroupId() {
   const url = `${BASE_URL}/api/v2/groups.json`;
   const res = await fetchWithRetry(url, getAuthHeaders());
@@ -131,12 +161,11 @@ export default async function handler(req, res) {
     const supportGroupId = await fetchSupportGroupId();
 
     const createdQuery = `type:ticket created>=${weekStart} created<=${weekEnd} group:"support"`;
-    const solvedQuery = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
 
-    // Build parallel requests: created count + solved count + macro counts + optional CSAT
+    // Build parallel requests: created count + exact solved count + macro counts + optional CSAT
     const promises = [
       fetchCount(createdQuery),
-      fetchCount(solvedQuery),
+      fetchExactSolvedCount(weekStart, weekEnd),
       ...MACRO_TAGS.map((tag) =>
         fetchCount(`type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" tags:${tag}`)
       ),
