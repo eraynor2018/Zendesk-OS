@@ -196,6 +196,58 @@ export default function ZendeskReportGenerator() {
   const [copied, setCopied] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
+  const [fetchLoading, setFetchLoading] = useState(false);
+  const [fetchError, setFetchError] = useState("");
+
+  const fetchZendeskData = useCallback(async () => {
+    if (!weekStart || !weekEnd) {
+      setFetchError("Please select both week start and week end dates.");
+      return;
+    }
+
+    setFetchLoading(true);
+    setFetchError("");
+
+    try {
+      const params = new URLSearchParams({ weekStart, weekEnd });
+      const response = await fetch(`/api/zendesk-report?${params}`);
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      setCreatedTickets(data.createdTickets.toString());
+      setSolvedTickets(data.solvedTickets.toString());
+
+      setAgents(
+        data.agents.map((a) => ({
+          name: a.name,
+          solved: a.solved.toString(),
+        }))
+      );
+
+      setMacros((prev) =>
+        prev.map((m) => ({
+          ...m,
+          count:
+            data.macros[m.tag] !== undefined
+              ? data.macros[m.tag].toString()
+              : m.count,
+        }))
+      );
+
+      setCsatScore(data.csat.score);
+      setCsatGood(data.csat.good.toString());
+      setCsatBad(data.csat.bad.toString());
+    } catch (err) {
+      setFetchError(err.message);
+    } finally {
+      setFetchLoading(false);
+    }
+  }, [weekStart, weekEnd]);
 
   const updateTrigger = (idx, val) => {
     const next = [...triggers];
@@ -409,7 +461,55 @@ export default function ZendeskReportGenerator() {
               CSAT window: {csatDateLabel}
             </div>
           )}
+          <button
+            onClick={fetchZendeskData}
+            disabled={fetchLoading || !weekStart || !weekEnd}
+            style={{
+              padding: "8px 20px",
+              background: fetchLoading ? "#61716A" : "#02C874",
+              color: fetchLoading ? "#fff" : "#253C32",
+              border: "none",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: 600,
+              cursor: fetchLoading ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+              opacity: (!weekStart || !weekEnd) ? 0.5 : 1,
+              transition: "all 0.15s",
+            }}
+          >
+            {fetchLoading ? "Fetching..." : "Fetch Data"}
+          </button>
         </div>
+
+        {fetchError && (
+          <div style={{
+            background: "#fff0f0",
+            border: "1px solid #ffcaca",
+            borderRadius: "6px",
+            padding: "10px 14px",
+            marginBottom: "16px",
+            fontSize: "13px",
+            color: "#c00",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}>
+            <span>{fetchError}</span>
+            <button
+              onClick={() => setFetchError("")}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#c00",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: "13px",
+                padding: "0 0 0 12px",
+              }}
+            >Dismiss</button>
+          </div>
+        )}
 
         {/* Volume */}
         <Section title="Ticket Volume" icon="📊">
