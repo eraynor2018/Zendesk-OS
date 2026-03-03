@@ -76,58 +76,69 @@ async function fetchSupportGroupId() {
 }
 
 /**
- * Uses the Incremental Ticket Events API to find who actually changed
- * each ticket's status to "solved". Returns { [ticketId]: updaterId }
- * or null if the API is unavailable.
- *
- * This fixes the discrepancy where our tool counted by assignee_id
- * (who the ticket is assigned to) but Zendesk Analytics counts by
- * who performed the solve action (e.g. an agent may solve a ticket
- * assigned to another agent without reassigning it first).
+ * Fetch the audit trail for a single ticket and find who solved it.
+ * Returns the author_id of the last status→solved event, or null.
+ * Audits are in chronological order; we keep the last solve author.
  */
-async function fetchTicketSolvers(weekStart, weekEnd, ticketIdSet) {
-  const headers = getAuthHeaders();
-  const startTime = Math.floor(new Date(weekStart + 'T00:00:00Z').getTime() / 1000);
-  const endTime = Math.floor(new Date(weekEnd + 'T23:59:59Z').getTime() / 1000);
-  const deadline = Date.now() + 40000; // 40-second time budget
+async function fetchTicketSolver(ticketId, headers) {
+  let url = `${BASE_URL}/api/v2/tickets/${ticketId}/audits.json?per_page=100`;
+  let solver = null;
+  let pages = 0;
 
-  const solvers = {}; // ticketId -> updater who solved it (last solve wins)
-  let url = `${BASE_URL}/api/v2/incremental/ticket_events.json?start_time=${startTime}`;
-
-  while (url) {
-    // Check time budget — return what we have if running low
-    if (Date.now() > deadline) {
-      console.warn('Solver resolution time budget exceeded, returning partial data');
-      break;
-    }
-
-    const res = await fetchWithRetry(url, headers);
-    if (!res.ok) {
-      // If this endpoint isn't available on this plan, return null to fall back
-      if (res.status === 403 || res.status === 404) return null;
-      const text = await res.text().catch(() => '');
-      throw new Error(`Zendesk ticket events API error ${res.status}: ${text}`);
-    }
+  while (url && pages < 3) {
+    pages++;
+    const res = await fetchWithRetry(url, headers, 1);
+    if (!res || !res.ok) break;
     const data = await res.json();
 
-    for (const event of data.ticket_events || []) {
-      // Skip events past our end window
-      if (event.timestamp > endTime) continue;
-      // Only process tickets in our set
-      if (!ticketIdSet.has(event.ticket_id)) continue;
-
-      for (const child of event.child_events || []) {
-        if (child.field_name === 'status' && child.value === 'solved') {
-          solvers[event.ticket_id] = event.updater_id;
-          break;
+    for (const audit of data.audits || []) {
+      for (const event of audit.events || []) {
+        if (event.field_name === 'status' && event.value === 'solved') {
+          solver = audit.author_id;
         }
       }
     }
 
-    // Stop if past our date range or end of data
-    if (data.end_of_stream) break;
-    if (data.end_time && data.end_time > endTime) break;
+    // Only paginate if we haven't found a solver yet (save API calls)
+    if (solver) break;
     url = data.next_page || null;
+  }
+
+  return solver;
+}
+
+/**
+ * Resolve actual solvers for a list of tickets using per-ticket audits.
+ * Sends concurrent requests with a time budget so we process as many
+ * as possible within the serverless function timeout.
+ */
+async function fetchAllTicketSolvers(ticketIds) {
+  const headers = getAuthHeaders();
+  const solvers = {};
+  const deadline = Date.now() + 45000; // 45-second budget
+  const CONCURRENCY = 8;
+
+  for (let i = 0; i < ticketIds.length; i += CONCURRENCY) {
+    if (Date.now() > deadline) {
+      console.warn(
+        `Solver audit timed out: resolved ${Object.keys(solvers).length}/${ticketIds.length} tickets`
+      );
+      break;
+    }
+
+    const batch = ticketIds.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (ticketId) => {
+        const solver = await fetchTicketSolver(ticketId, headers);
+        return { ticketId, solver };
+      })
+    );
+
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value?.solver) {
+        solvers[r.value.ticketId] = r.value.solver;
+      }
+    }
   }
 
   return solvers;
@@ -157,21 +168,24 @@ async function fetchAgentSolves(weekStart, weekEnd) {
     return !(channel === 'api' && source.toLowerCase().includes('answer bot'));
   });
 
-  // Build ticket ID set for solver lookup
-  const ticketIdSet = new Set(filtered.map((t) => t.id));
-
-  // Try to get actual solvers via incremental ticket events
-  let solvers = null;
+  // Resolve who actually solved each ticket via per-ticket audits
+  const ticketIds = filtered.map((t) => t.id);
+  let solvers = {};
   try {
-    solvers = await fetchTicketSolvers(weekStart, weekEnd, ticketIdSet);
+    solvers = await fetchAllTicketSolvers(ticketIds);
   } catch (e) {
     console.warn('Could not fetch ticket solvers, falling back to assignee:', e.message);
   }
 
-  // Count by actual solver (or assignee as fallback for unresolved tickets)
+  const resolvedCount = Object.keys(solvers).length;
+  console.log(
+    `Solver resolution: ${resolvedCount}/${ticketIds.length} tickets resolved via audits`
+  );
+
+  // Count by actual solver (falls back to assignee for unresolved tickets)
   const agentIdCounts = {};
   for (const ticket of filtered) {
-    const solverId = (solvers && solvers[ticket.id]) || ticket.assignee_id;
+    const solverId = solvers[ticket.id] || ticket.assignee_id;
     if (solverId) {
       agentIdCounts[solverId] = (agentIdCounts[solverId] || 0) + 1;
     }
