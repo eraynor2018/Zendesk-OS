@@ -50,7 +50,7 @@ async function fetchCount(query) {
 
 async function fetchAgentSolves(weekStart, weekEnd) {
   const headers = getAuthHeaders();
-  const query = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" -via:"Answer Bot for Web Widget"`;
+  const query = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
   let allResults = [];
   let usersMap = {};
   let url = `${BASE_URL}/api/v2/search.json?query=${encodeURIComponent(query)}&include=users&per_page=100`;
@@ -73,8 +73,15 @@ async function fetchAgentSolves(weekStart, weekEnd) {
     url = data.next_page || null;
   }
 
+  // Filter out Answer Bot tickets if via channel info is available
+  const filtered = allResults.filter((ticket) => {
+    const channel = ticket.via?.channel;
+    const source = ticket.via?.source?.from?.title || '';
+    return channel !== 'api' || !source.toLowerCase().includes('answer bot');
+  });
+
   const agentCounts = {};
-  for (const ticket of allResults) {
+  for (const ticket of filtered) {
     if (ticket.assignee_id) {
       const name = usersMap[ticket.assignee_id] || `Agent ${ticket.assignee_id}`;
       agentCounts[name] = (agentCounts[name] || 0) + 1;
@@ -138,8 +145,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const createdQuery = `type:ticket created>=${weekStart} created<=${weekEnd} group:"support" -via:"Answer Bot for Web Widget"`;
-    const solvedQuery = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" -via:"Answer Bot for Web Widget"`;
+    const createdQuery = `type:ticket created>=${weekStart} created<=${weekEnd} group:"support"`;
+    const solvedQuery = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support"`;
 
     const results = await Promise.all([
       fetchCount(createdQuery),
