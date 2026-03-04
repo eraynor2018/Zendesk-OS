@@ -258,71 +258,29 @@ export default function ZendeskReportGenerator() {
       setFetchLoading(false);
     }
 
-    // Await search results, then fire batched audit calls
+    // Await search results and count by assignee
+    // (Zendesk's "Tickets solved" metric counts by assignee, not by who
+    // performed the solve action — per-ticket audits overcounted LTVplus)
     try {
       const searchResponse = await searchPromise;
       if (!searchResponse.ok) {
         const errData = await searchResponse.json().catch(() => ({}));
         throw new Error(errData.error || `Search error: ${searchResponse.status}`);
       }
-      const { tickets, users: assigneeUsers } = await searchResponse.json();
+      const { tickets, users } = await searchResponse.json();
 
-      // Split ticket IDs into chunks for parallel audit calls
-      // Each chunk gets its own serverless function with a full 60s budget
-      const CHUNK_SIZE = 150;
-      const ticketIds = tickets.map((t) => t.id);
-      const chunks = [];
-      for (let i = 0; i < ticketIds.length; i += CHUNK_SIZE) {
-        chunks.push(ticketIds.slice(i, i + CHUNK_SIZE));
-      }
-
-      // Fire audit batches 2 at a time to reduce Zendesk rate limit pressure
-      // (all 4 at once causes 429s → failed audits → fallback to assignee)
-      const PARALLEL_BATCHES = 2;
-      const auditResults = [];
-      for (let i = 0; i < chunks.length; i += PARALLEL_BATCHES) {
-        const batchGroup = chunks.slice(i, i + PARALLEL_BATCHES);
-        const groupResults = await Promise.allSettled(
-          batchGroup.map((chunk) =>
-            fetch(`/api/zendesk-agents?mode=audit&ticketIds=${chunk.join(",")}`)
-              .then((r) => {
-                if (!r.ok) throw new Error(`Audit batch error: ${r.status}`);
-                return r.json();
-              })
-          )
-        );
-        auditResults.push(...groupResults);
-      }
-
-      // Merge solver maps and user info from all batches
-      const allSolvers = {};
-      const allUsers = { ...assigneeUsers };
-      for (const result of auditResults) {
-        if (result.status === "fulfilled") {
-          Object.assign(allSolvers, result.value.solvers);
-          Object.assign(allUsers, result.value.users);
-        }
-      }
-
-      // Compute agent solve counts (same logic as before, now client-side)
+      // Count by assignee_id, filtering out non-agent roles
       const agentIdCounts = {};
       for (const ticket of tickets) {
-        let solverId = allSolvers[ticket.id] || ticket.assignee_id;
-
-        // If solver is an end-user, fall back to ticket assignee
-        if (solverId && allUsers[solverId]?.role === "end-user") {
-          solverId = ticket.assignee_id;
-        }
-
-        // Only count if final solver is NOT an end-user
-        if (solverId && allUsers[solverId]?.role !== "end-user") {
-          agentIdCounts[solverId] = (agentIdCounts[solverId] || 0) + 1;
+        const assigneeId = ticket.assignee_id;
+        if (assigneeId && users[assigneeId]?.role !== "end-user") {
+          agentIdCounts[assigneeId] = (agentIdCounts[assigneeId] || 0) + 1;
         }
       }
 
       const agentsList = Object.entries(agentIdCounts)
         .map(([id, solved]) => ({
-          name: allUsers[id]?.name || `Agent ${id}`,
+          name: users[id]?.name || `Agent ${id}`,
           solved,
         }))
         .sort((a, b) => b.solved - a.solved);
