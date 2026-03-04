@@ -132,10 +132,11 @@ export default async function handler(req, res) {
 
     const createdQuery = `type:ticket created>=${weekStart} created<=${weekEnd} group:"support"`;
 
-    // Build parallel requests: created count + macro counts + optional CSAT
-    // (solved count + agents come from /api/zendesk-agents to avoid rate limit competition)
+    // Build parallel requests: created count + ada_test count + macro counts + optional CSAT
+    const adaTestQuery = `type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" tags:ada_test`;
     const promises = [
       fetchCount(createdQuery),
+      fetchCount(adaTestQuery),
       ...MACRO_TAGS.map((tag) =>
         fetchCount(`type:ticket solved>=${weekStart} solved<=${weekEnd} group:"support" tags:${tag}`)
       ),
@@ -149,8 +150,9 @@ export default async function handler(req, res) {
     const results = await Promise.all(promises);
 
     const createdTickets = results[0];
-    const macroCounts = results.slice(1, 1 + MACRO_TAGS.length);
-    const csat = hasCsat ? results[1 + MACRO_TAGS.length] : null;
+    const adaTickets = results[1];
+    const macroCounts = results.slice(2, 2 + MACRO_TAGS.length);
+    const csat = hasCsat ? results[2 + MACRO_TAGS.length] : null;
 
     const macros = {};
     MACRO_TAGS.forEach((tag, i) => {
@@ -159,6 +161,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       createdTickets,
+      adaTickets,
       macros,
       csat,
     });

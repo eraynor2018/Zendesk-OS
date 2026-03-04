@@ -55,6 +55,16 @@ function formatDate(d) {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
 }
 
+function getDefaultDates() {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const weekAgo = new Date(yesterday);
+  weekAgo.setDate(yesterday.getDate() - 6);
+  const toYMD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { start: toYMD(weekAgo), end: toYMD(yesterday) };
+}
+
 const Section = ({ title, icon, children }) => (
   <div style={{
     background: "#fff",
@@ -181,8 +191,8 @@ const StatCard = ({ label, value, sub }) => (
 );
 
 export default function ZendeskReportGenerator() {
-  const [weekStart, setWeekStart] = useState("");
-  const [weekEnd, setWeekEnd] = useState("");
+  const [weekStart, setWeekStart] = useState(() => getDefaultDates().start);
+  const [weekEnd, setWeekEnd] = useState(() => getDefaultDates().end);
   const [createdTickets, setCreatedTickets] = useState("");
   const [solvedTickets, setSolvedTickets] = useState("");
   const [adaConversations, setAdaConversations] = useState("");
@@ -200,7 +210,6 @@ export default function ZendeskReportGenerator() {
   const [showPreview, setShowPreview] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
   const [fetchLoading, setFetchLoading] = useState(false);
-  const [agentsLoading, setAgentsLoading] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [csatLoading, setCsatLoading] = useState(false);
 
@@ -221,29 +230,20 @@ export default function ZendeskReportGenerator() {
       setFetchError("Please select both week start and week end dates.");
       return;
     }
-
     setFetchLoading(true);
-    setAgentsLoading(true);
     setFetchError("");
-
-    const reportParams = new URLSearchParams({ weekStart, weekEnd });
-    const searchParams = new URLSearchParams({ mode: "search", weekStart, weekEnd });
-
-    // Fire report (fast counts+macros) + agent search in parallel
-    const reportPromise = fetch(`/api/zendesk-report?${reportParams}`);
-    const searchPromise = fetch(`/api/zendesk-agents?${searchParams}`);
-
-    // Await report data first (fast — counts + macros)
     try {
-      const response = await reportPromise;
+      const params = new URLSearchParams({ weekStart, weekEnd });
+      const response = await fetch(`/api/zendesk-report?${params}`);
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || `Server error: ${response.status}`);
       }
       const data = await response.json();
-
       setCreatedTickets(data.createdTickets.toString());
-
+      if (data.adaTickets !== undefined) {
+        setAdaTickets(data.adaTickets.toString());
+      }
       setMacros((prev) =>
         prev.map((m) => ({
           ...m,
@@ -257,81 +257,6 @@ export default function ZendeskReportGenerator() {
       setFetchError(err.message);
     } finally {
       setFetchLoading(false);
-    }
-
-    // Await search results, then run SEQUENTIAL audit calls.
-    // A single call with ~530 tickets hits the 50s deadline inconsistently.
-    // Two sequential calls of ~265 each stay well within budget with no
-    // rate limit competition, giving consistent results every time.
-    try {
-      const searchResponse = await searchPromise;
-      if (!searchResponse.ok) {
-        const errData = await searchResponse.json().catch(() => ({}));
-        throw new Error(errData.error || `Search error: ${searchResponse.status}`);
-      }
-      const { tickets, users: assigneeUsers } = await searchResponse.json();
-
-      // Split ticket IDs into 2 halves for sequential audit calls
-      const ticketIds = tickets.map((t) => t.id);
-      const mid = Math.ceil(ticketIds.length / 2);
-      const batches = [ticketIds.slice(0, mid), ticketIds.slice(mid)];
-
-      // Run audit batches SEQUENTIALLY — no rate limit competition
-      let allSolvers = {};
-      const allUsers = { ...assigneeUsers };
-
-      for (const batch of batches) {
-        if (batch.length === 0) continue;
-        try {
-          const auditResponse = await fetch(
-            `/api/zendesk-agents?mode=audit&ticketIds=${batch.join(",")}`
-          );
-          if (auditResponse.ok) {
-            const auditData = await auditResponse.json();
-            Object.assign(allSolvers, auditData.solvers || {});
-            Object.assign(allUsers, auditData.users || {});
-          }
-        } catch (e) {
-          console.warn("Audit batch failed, using assignee fallback:", e.message);
-        }
-      }
-
-      // Compute agent solve counts using audit solver with assignee fallback
-      const agentIdCounts = {};
-      for (const ticket of tickets) {
-        let solverId = allSolvers[ticket.id] || ticket.assignee_id;
-
-        // If solver is an end-user, fall back to ticket assignee
-        if (solverId && allUsers[solverId]?.role === "end-user") {
-          solverId = ticket.assignee_id;
-        }
-
-        // Only count if final solver is NOT an end-user
-        if (solverId && allUsers[solverId]?.role !== "end-user") {
-          agentIdCounts[solverId] = (agentIdCounts[solverId] || 0) + 1;
-        }
-      }
-
-      const agentsList = Object.entries(agentIdCounts)
-        .map(([id, solved]) => ({
-          name: allUsers[id]?.name || `Agent ${id}`,
-          solved,
-        }))
-        .sort((a, b) => b.solved - a.solved);
-
-      const totalSolved = agentsList.reduce((sum, a) => sum + a.solved, 0);
-
-      setSolvedTickets(totalSolved.toString());
-      setAgents(
-        agentsList.map((a) => ({
-          name: a.name,
-          solved: a.solved.toString(),
-        }))
-      );
-    } catch (err) {
-      setFetchError((prev) => prev ? prev + " | " + err.message : err.message);
-    } finally {
-      setAgentsLoading(false);
     }
   }, [weekStart, weekEnd]);
 
@@ -450,69 +375,61 @@ export default function ZendeskReportGenerator() {
   const handleDownloadPDF = useCallback(() => {
     const doc = new jsPDF({ unit: "pt", format: "letter" });
     const pageW = doc.internal.pageSize.getWidth();
-    const margin = 48;
+    const margin = 36;
     const colW = (pageW - margin * 2 - 24) / 2;
-    let y = 48;
+    let y = 36;
 
     const brandGreen = [2, 200, 116];
     const darkGreen = [37, 60, 50];
     const gray = [97, 113, 106];
 
-    const addPageIfNeeded = (need) => {
-      if (y + need > doc.internal.pageSize.getHeight() - 48) {
-        doc.addPage();
-        y = 48;
-      }
-    };
-
     // Header bar
     doc.setFillColor(...darkGreen);
-    doc.rect(0, 0, pageW, 56, "F");
+    doc.rect(0, 0, pageW, 44, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
+    doc.setFontSize(14);
     doc.setTextColor(255, 255, 255);
-    doc.text("Zendesk OS", margin, 28);
+    doc.text("Zendesk OS", margin, 22);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     doc.setTextColor(180, 200, 190);
-    doc.text("Weekly Report", margin, 42);
+    doc.text("Weekly Report", margin, 34);
 
     // Date range badge
     if (weekStart && weekEnd) {
       const startD = new Date(weekStart + "T12:00:00");
       const endD = new Date(weekEnd + "T12:00:00");
       const label = `${formatDate(startD)} - ${formatDate(endD)}`;
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setTextColor(255, 255, 255);
-      doc.text(label, pageW - margin, 34, { align: "right" });
+      doc.text(label, pageW - margin, 28, { align: "right" });
     }
-    y = 76;
+    y = 58;
 
     // Section helper
     const drawSection = (title) => {
-      addPageIfNeeded(40);
       doc.setFillColor(...brandGreen);
-      doc.rect(margin, y, 3, 16, "F");
+      doc.rect(margin, y, 3, 12, "F");
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
+      doc.setFontSize(10);
       doc.setTextColor(...darkGreen);
-      doc.text(title.toUpperCase(), margin + 12, y + 12);
-      y += 28;
+      doc.text(title.toUpperCase(), margin + 10, y + 10);
+      y += 20;
     };
 
     // Stat box helper
     const drawStat = (x, label, value, width) => {
       doc.setFillColor(248, 255, 252);
       doc.setDrawColor(232, 240, 236);
-      doc.roundedRect(x, y, width, 44, 4, 4, "FD");
+      doc.roundedRect(x, y, width, 34, 3, 3, "FD");
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
+      doc.setFontSize(7);
       doc.setTextColor(...gray);
-      doc.text(label.toUpperCase(), x + 10, y + 14);
+      doc.text(label.toUpperCase(), x + 8, y + 11);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
+      doc.setFontSize(14);
       doc.setTextColor(...darkGreen);
-      doc.text(String(value), x + 10, y + 34);
+      doc.text(String(value), x + 8, y + 27);
     };
 
     // ── Ticket Volume ──
@@ -520,7 +437,7 @@ export default function ZendeskReportGenerator() {
     const statW = (pageW - margin * 2 - 12) / 2;
     drawStat(margin, "Created Tickets", created.toLocaleString(), statW);
     drawStat(margin + statW + 12, "Solved Tickets", solved.toLocaleString(), statW);
-    y += 56;
+    y += 42;
 
     // ── Automation ──
     drawSection("Automation");
@@ -533,85 +450,80 @@ export default function ZendeskReportGenerator() {
     adaStats.forEach((s, i) => {
       drawStat(margin + i * (adaW + 12), s.label, s.value, adaW);
     });
-    y += 56;
+    y += 42;
 
     // Triggers
-    addPageIfNeeded(triggers.length * 16 + 10);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setTextColor(...gray);
     doc.text("AUTO-RESPONSE TRIGGERS (7D)", margin, y + 4);
-    y += 14;
+    y += 12;
     triggers.forEach((t, i) => {
       const col = i % 2;
       const xPos = margin + col * (colW + 24);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setTextColor(...darkGreen);
-      doc.text(t.label, xPos, y + 10);
+      doc.text(t.label, xPos, y + 9);
       doc.setFont("helvetica", "bold");
-      doc.text(String(parseInt(t.count) || 0), xPos + colW - 4, y + 10, { align: "right" });
-      if (col === 1 || i === triggers.length - 1) y += 16;
+      doc.text(String(parseInt(t.count) || 0), xPos + colW - 4, y + 9, { align: "right" });
+      if (col === 1 || i === triggers.length - 1) y += 13;
     });
 
     // Automation stats
-    y += 8;
+    y += 4;
     const autoW2 = (pageW - margin * 2 - 12) / 2;
     drawStat(margin, "Trigger Total", triggerSum, autoW2);
     drawStat(margin + autoW2 + 12, "Automation %", `${automationPct}%`, autoW2);
-    y += 56;
+    y += 42;
 
     // ── Agent Solves ──
     drawSection("Agent Solves");
     const activeAgents = agents.filter(a => parseInt(a.solved) > 0).sort((a, b) => parseInt(b.solved) - parseInt(a.solved));
     activeAgents.forEach((a, i) => {
-      addPageIfNeeded(18);
       const col = i % 2;
       const xPos = margin + col * (colW + 24);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setTextColor(...darkGreen);
-      doc.text(a.name, xPos, y + 10);
+      doc.text(a.name, xPos, y + 9);
       doc.setFont("helvetica", "bold");
-      doc.text(String(parseInt(a.solved).toLocaleString()), xPos + colW - 4, y + 10, { align: "right" });
-      if (col === 1 || i === activeAgents.length - 1) y += 16;
+      doc.text(String(parseInt(a.solved).toLocaleString()), xPos + colW - 4, y + 9, { align: "right" });
+      if (col === 1 || i === activeAgents.length - 1) y += 13;
     });
-    y += 8;
+    y += 4;
 
     // ── Macro Usage ──
     drawSection("Macro Usage");
     const activeMacros = macros.filter(m => parseInt(m.count) > 0).sort((a, b) => parseInt(b.count) - parseInt(a.count));
     activeMacros.forEach((m, i) => {
-      addPageIfNeeded(18);
       const col = i % 2;
       const xPos = margin + col * (colW + 24);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setTextColor(...darkGreen);
-      doc.text(m.label, xPos, y + 10);
+      doc.text(m.label, xPos, y + 9);
       doc.setFont("helvetica", "bold");
-      doc.text(String(parseInt(m.count)), xPos + colW - 4, y + 10, { align: "right" });
-      if (col === 1 || i === activeMacros.length - 1) y += 16;
+      doc.text(String(parseInt(m.count)), xPos + colW - 4, y + 9, { align: "right" });
+      if (col === 1 || i === activeMacros.length - 1) y += 13;
     });
-    y += 8;
+    y += 4;
     const macW2 = (pageW - margin * 2 - 12) / 2;
-    addPageIfNeeded(52);
     drawStat(margin, "Macro Total", macroSum, macW2);
     drawStat(margin + macW2 + 12, "Coverage %", `${macroCoveragePct}%`, macW2);
-    y += 56;
+    y += 42;
 
     // ── CSAT ──
     drawSection("Customer Satisfaction");
-    addPageIfNeeded(52);
     const csW = (pageW - margin * 2 - 24) / 3;
     drawStat(margin, "CSAT Score", `${csatScore || "0"}%`, csW);
     drawStat(margin + csW + 12, "Good Ratings", csatGood || "0", csW);
     drawStat(margin + (csW + 12) * 2, "Bad Ratings", csatBad || "0", csW);
-    y += 56;
+    y += 42;
 
     if (csatDateLabel) {
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
+      doc.setFontSize(7);
       doc.setTextColor(...gray);
       doc.text(`Satisfaction ${csatDateLabel}  |  ${csatTotal} total ratings`, margin, y);
     }
@@ -759,22 +671,22 @@ export default function ZendeskReportGenerator() {
           </div>
           <button
             onClick={fetchZendeskData}
-            disabled={fetchLoading || agentsLoading || !weekStart || !weekEnd}
+            disabled={fetchLoading || !weekStart || !weekEnd}
             style={{
               padding: "8px 20px",
-              background: (fetchLoading || agentsLoading) ? "#61716A" : "#02C874",
-              color: (fetchLoading || agentsLoading) ? "#fff" : "#253C32",
+              background: fetchLoading ? "#61716A" : "#02C874",
+              color: fetchLoading ? "#fff" : "#253C32",
               border: "none",
               borderRadius: "6px",
               fontSize: "13px",
               fontWeight: 600,
-              cursor: (fetchLoading || agentsLoading) ? "not-allowed" : "pointer",
+              cursor: fetchLoading ? "not-allowed" : "pointer",
               whiteSpace: "nowrap",
               opacity: (!weekStart || !weekEnd) ? 0.5 : 1,
               transition: "all 0.15s",
             }}
           >
-            {fetchLoading ? "Fetching..." : agentsLoading ? "Loading agents..." : "Fetch Data"}
+            {fetchLoading ? "Fetching..." : "Fetch Data"}
           </button>
         </div>
 
@@ -880,19 +792,6 @@ export default function ZendeskReportGenerator() {
 
         {/* Agent Solves */}
         <Section title="Agent Solves" icon="👤">
-          {agentsLoading && (
-            <div style={{
-              fontSize: "13px",
-              color: "#61716A",
-              padding: "8px 12px",
-              marginBottom: "12px",
-              background: "#f8fffc",
-              borderRadius: "6px",
-              border: "1px solid #e8f0ec",
-            }}>
-              ⏳ Loading agent data from ticket audits...
-            </div>
-          )}
           <div style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
@@ -979,6 +878,31 @@ export default function ZendeskReportGenerator() {
                 fontWeight: 500,
               }}
             >+ Add</button>
+            <a
+              href="https://sidelineswap.zendesk.com/explore/studio#/dashboards/precanned/9425F76AF99EC760E6FDE83C5A99EE472407CBD6B0D5A3DA700AB5DDE040C541"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                padding: "6px 12px",
+                background: "#f8fffc",
+                border: "1px solid #CFDCD6",
+                borderRadius: "5px",
+                fontSize: "12px",
+                fontWeight: 500,
+                color: "#253C32",
+                textDecoration: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                marginLeft: "auto",
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = "#02C874"}
+              onMouseLeave={e => e.currentTarget.style.borderColor = "#CFDCD6"}
+            >
+              Zendesk Explore
+              <span style={{ fontSize: "10px" }}>&#8599;</span>
+            </a>
           </div>
         </Section>
 
