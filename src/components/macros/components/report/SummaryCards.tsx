@@ -19,8 +19,8 @@ export default function SummaryCards({ results }: SummaryCardsProps) {
   const cards = [
     { label: 'Tickets Reviewed', value: totalTickets, color: 'text-green' },
     { label: 'Macros Reviewed', value: results.length, color: 'text-turf/80' },
-    { label: 'Action Items', value: totalActionItems, color: 'text-red-400' },
-    { label: 'Needs Manual Review', value: totalNeedsContext, color: 'text-amber-400' },
+    { label: 'Action Items', value: totalActionItems, color: 'text-red-600' },
+    { label: 'Needs Manual Review', value: totalNeedsContext, color: 'text-amber-600' },
   ];
 
   return (
@@ -28,7 +28,7 @@ export default function SummaryCards({ results }: SummaryCardsProps) {
       {cards.map((card) => (
         <div
           key={card.label}
-          className="bg-white border border-pastel rounded-lg p-4 text-center"
+          className="bg-white border border-pastel/80 rounded-xl p-4 text-center shadow-sm"
         >
           <p className={`text-3xl font-bold ${card.color}`}>{card.value}</p>
           <p className="text-xs text-slate-green mt-1">{card.label}</p>

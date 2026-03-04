@@ -17,7 +17,7 @@ const variantMap: Record<NonNullable<CardProps['variant']>, string> = {
 
 export default function Card({ variant = 'default', className = '', children }: CardProps) {
   return (
-    <div className={`rounded-lg p-5 ${variantMap[variant]} ${className}`}>
+    <div className={`rounded-xl p-5 ${variantMap[variant]} ${className}`}>
       {children}
     </div>
   );

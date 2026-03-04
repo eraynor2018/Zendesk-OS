@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Macro } from '@/types';
 import { stripHtml } from '@/lib/matching';
 import Button from '@/components/ui/Button';
-import Card from '@/components/ui/Card';
 
 interface MacroTableProps {
   macros: Macro[];
@@ -14,22 +13,27 @@ export default function MacroTable({ macros, onDelete }: MacroTableProps) {
 
   if (macros.length === 0) {
     return (
-      <Card>
-        <p className="text-slate-green text-sm text-center py-4">
+      <div className="text-center py-12">
+        <p className="text-slate-green text-sm">
           No macros yet. Import a CSV or add one manually above.
         </p>
-      </Card>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-2">
-      {macros.map((macro) => (
-        <Card key={macro.id} className="!py-3.5 flex items-center justify-between gap-4">
+    <div className="bg-white border border-pastel/80 rounded-xl shadow-sm overflow-hidden">
+      {macros.map((macro, i) => (
+        <div
+          key={macro.id}
+          className={`flex items-center justify-between gap-4 px-4 py-3 ${
+            i > 0 ? 'border-t border-pastel/50' : ''
+          }`}
+        >
           <div className="flex-1 min-w-0">
             <p className="text-turf font-medium text-sm truncate">{macro.title}</p>
-            <p className="text-slate-green/60 text-xs mt-0.5 font-mono truncate">
-              {stripHtml(macro.body).slice(0, 120)}
+            <p className="text-slate-green/50 text-xs mt-0.5 font-mono truncate">
+              {stripHtml(macro.body).slice(0, 100)}
             </p>
           </div>
           <div className="flex-shrink-0">
@@ -48,17 +52,15 @@ export default function MacroTable({ macros, onDelete }: MacroTableProps) {
                 </Button>
               </div>
             ) : (
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
                 onClick={() => setConfirmId(macro.id)}
-                className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                className="text-xs text-slate-green/40 hover:text-red-500 transition-colors"
               >
-                Delete
-              </Button>
+                Remove
+              </button>
             )}
           </div>
-        </Card>
+        </div>
       ))}
     </div>
   );

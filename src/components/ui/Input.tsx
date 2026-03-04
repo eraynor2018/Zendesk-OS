@@ -19,12 +19,12 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           className={`w-full bg-white border ${
             error ? 'border-red-500' : 'border-pastel/80'
-          } rounded-md px-3 py-2.5 text-turf placeholder-slate-green/50 shadow-sm focus:outline-none focus:border-green focus:ring-1 focus:ring-green/20 transition-colors ${
+          } rounded-lg px-3 py-2 text-sm text-turf placeholder-slate-green/40 shadow-sm focus:outline-none focus:border-green focus:ring-1 focus:ring-green/20 transition-colors ${
             mono ? 'font-mono text-sm' : ''
           } ${className}`}
           {...props}
         />
-        {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
       </div>
     );
   }

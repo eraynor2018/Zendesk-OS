@@ -18,7 +18,7 @@ export default function MacroBreakdown({
   const trendNote = editedTrendNote ?? result.trend_note;
 
   return (
-    <div className="bg-white border border-pastel rounded-lg p-5 mb-4">
+    <div className="bg-white border border-pastel/80 rounded-xl p-5 mb-4 shadow-sm">
       <div className="flex items-center justify-between mb-1">
         <h3 className="text-turf font-semibold">{result.macroTitle}</h3>
         <span className="text-sm text-slate-green">

@@ -9,7 +9,7 @@ import MacroSettingsPage from './components/macros/pages/MacroSettingsPage';
 function MacroLayout() {
   return (
     <MacroAppProvider>
-      <div className="max-w-5xl mx-auto px-8 py-8">
+      <div className="max-w-3xl mx-auto px-8 py-10">
         <Routes>
           <Route index element={<Navigate to="/macros/library" replace />} />
           <Route path="library" element={<MacroLibraryPage />} />

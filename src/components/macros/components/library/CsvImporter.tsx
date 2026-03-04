@@ -1,8 +1,6 @@
 import { useState, useRef, DragEvent } from 'react';
 import { useApp } from '@/components/macros/context/MacroAppContext';
 import { parseMacroCsv } from '@/lib/csvParser';
-import Button from '@/components/ui/Button';
-import Card from '@/components/ui/Card';
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
 
@@ -53,14 +51,7 @@ export default function CsvImporter() {
   }
 
   return (
-    <Card className="mb-6">
-      <h2 className="text-base font-semibold text-turf mb-3">Import Macros from CSV</h2>
-      <p className="text-sm text-slate-green mb-3">
-        CSV must have columns:{' '}
-        <code className="text-turf/80 bg-pastel/50 px-1 rounded">Macro Title</code> and{' '}
-        <code className="text-turf/80 bg-pastel/50 px-1 rounded">Body/Comment</code>.
-        Duplicates by title are skipped.
-      </p>
+    <div className="mb-6">
       <div
         onClick={() => inputRef.current?.click()}
         onDrop={handleDrop}
@@ -69,22 +60,25 @@ export default function CsvImporter() {
           setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
-        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
+        className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
           isDragging
-            ? 'border-green bg-green/5 shadow-inner'
-            : 'border-pastel hover:border-green/40 hover:bg-green/[0.02]'
+            ? 'border-green bg-green/5'
+            : 'border-pastel/80 hover:border-green/40 hover:bg-green/[0.02]'
         }`}
       >
-        <div className="text-slate-green/50 mb-2">
+        <div className="text-pastel mb-2">
           <svg className="mx-auto w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
           </svg>
         </div>
-        <p className="text-turf/70 text-sm font-medium">
-          Drag & drop a CSV file here
+        <p className="text-turf text-sm font-medium">
+          Import macros from CSV
         </p>
-        <p className="text-slate-green/60 text-xs mt-1">
-          or <span className="text-green underline">click to browse</span>
+        <p className="text-slate-green text-xs mt-1">
+          Drag & drop or <span className="text-green cursor-pointer">browse files</span>
+        </p>
+        <p className="text-slate-green/50 text-[11px] mt-2">
+          Columns: <code className="bg-pastel/30 px-1 rounded">Macro Title</code> and <code className="bg-pastel/30 px-1 rounded">Body/Comment</code>
         </p>
         <input
           ref={inputRef}
@@ -100,23 +94,14 @@ export default function CsvImporter() {
       </div>
 
       {status === 'loading' && (
-        <p className="mt-3 text-sm text-slate-green">Parsing CSV...</p>
+        <p className="mt-2 text-sm text-slate-green">Parsing CSV...</p>
       )}
       {status === 'success' && (
-        <p className="mt-3 text-sm text-green-400">{message}</p>
+        <p className="mt-2 text-sm text-green-700">{message}</p>
       )}
       {status === 'error' && (
-        <p className="mt-3 text-sm text-red-400">{message}</p>
+        <p className="mt-2 text-sm text-red-600">{message}</p>
       )}
-
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mt-3"
-        onClick={() => inputRef.current?.click()}
-      >
-        + Upload Another CSV
-      </Button>
-    </Card>
+    </div>
   );
 }

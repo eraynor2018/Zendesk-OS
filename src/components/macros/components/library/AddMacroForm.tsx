@@ -34,46 +34,50 @@ export default function AddMacroForm() {
     setTimeout(() => setSuccess(false), 2000);
   }
 
+  if (!isOpen) {
+    return (
+      <div className="mb-6">
+        <button
+          onClick={() => setIsOpen(true)}
+          className="text-sm text-green hover:text-green/80 font-medium transition-colors"
+        >
+          + Add macro manually
+        </button>
+      </div>
+    );
+  }
+
   return (
     <Card className="mb-6">
-      <button
-        onClick={() => setIsOpen((v) => !v)}
-        className="w-full flex items-center justify-between text-base font-semibold text-turf hover:text-turf transition-colors"
-      >
-        <span>Add Macro Manually</span>
-        <span className="text-slate-green text-lg">{isOpen ? '−' : '+'}</span>
-      </button>
-
-      {isOpen && (
-        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-          <Input
-            label="Macro Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Auto-send: No Swap ID"
+      <h3 className="text-sm font-semibold text-turf mb-3">Add Macro Manually</h3>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Input
+          label="Macro Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g. Auto-send: No Swap ID"
+        />
+        <div>
+          <label className="block text-sm font-medium text-turf/80 mb-1.5">
+            Body / Comment
+          </label>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Paste the macro body here..."
+            rows={3}
+            className="w-full bg-white border border-pastel/80 rounded-lg px-3 py-2 text-turf text-sm placeholder-slate-green/40 shadow-sm focus:outline-none focus:border-green focus:ring-1 focus:ring-green/20 transition-colors resize-y"
           />
-          <div>
-            <label className="block text-sm font-medium text-turf/80 mb-1.5">
-              Body / Comment
-            </label>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Paste the macro body here..."
-              rows={4}
-              className="w-full bg-white border border-pastel/80 rounded-md px-3 py-2.5 text-turf placeholder-slate-green/50 shadow-sm focus:outline-none focus:border-green focus:ring-1 focus:ring-green/20 transition-colors resize-y"
-            />
-          </div>
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          {success && <p className="text-sm text-green-400">Macro added successfully.</p>}
-          <div className="flex gap-2">
-            <Button type="submit">Add Macro</Button>
-            <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
-      )}
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {success && <p className="text-sm text-green-700">Macro added successfully.</p>}
+        <div className="flex gap-2">
+          <Button type="submit" size="sm">Add Macro</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setIsOpen(false)}>
+            Cancel
+          </Button>
+        </div>
+      </form>
     </Card>
   );
 }

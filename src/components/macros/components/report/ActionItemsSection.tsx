@@ -24,7 +24,7 @@ export default function ActionItemsSection({ results }: ActionItemsSectionProps)
 
   return (
     <section className="mb-8">
-      <h2 className="text-lg font-semibold text-red-400 mb-3 flex items-center gap-2">
+      <h2 className="text-lg font-semibold text-red-600 mb-3 flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
         Action Items ({sorted.length})
       </h2>

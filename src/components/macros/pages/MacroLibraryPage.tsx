@@ -20,18 +20,23 @@ export default function MacroLibraryPage() {
       <CsvImporter />
       <AddMacroForm />
 
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex-1 max-w-sm">
-          <Input
-            placeholder="Search macros..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <span className="text-sm text-slate-green ml-4">
-          {filteredMacros.length} of {macros.length} macro{macros.length !== 1 ? 's' : ''}
-        </span>
-      </div>
+      {macros.length > 0 && (
+        <>
+          <div className="border-t border-pastel/60 my-6" />
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex-1 max-w-xs">
+              <Input
+                placeholder="Search macros..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <span className="text-xs text-slate-green ml-4">
+              {filteredMacros.length} of {macros.length} macro{macros.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </>
+      )}
 
       <MacroTable macros={filteredMacros} onDelete={deleteMacro} />
     </PageShell>

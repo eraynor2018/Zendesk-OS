@@ -41,28 +41,32 @@ export default function MacroReviewPage() {
       )}
 
       {!isReport && (
-        <div className="flex items-center gap-2 mb-8">
+        <div className="flex items-center mb-8">
           {STEPS.map((label, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <div
-                className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold border-2 transition-colors ${
-                  i < step
-                    ? 'bg-green border-green text-white'
-                    : i === step
-                    ? 'border-green text-green'
-                    : 'border-pastel text-pastel'
-                }`}
-              >
-                {i < step ? '✓' : i + 1}
+            <div key={i} className="flex items-center flex-1 last:flex-none">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold transition-colors ${
+                    i < step
+                      ? 'bg-green text-white'
+                      : i === step
+                      ? 'bg-green/10 text-green ring-2 ring-green/30'
+                      : 'bg-pastel/40 text-slate-green/50'
+                  }`}
+                >
+                  {i < step ? '✓' : i + 1}
+                </div>
+                <span
+                  className={`text-xs font-medium hidden sm:inline ${
+                    i <= step ? 'text-turf' : 'text-slate-green/50'
+                  }`}
+                >
+                  {label}
+                </span>
               </div>
-              <span
-                className={`text-xs font-medium hidden sm:inline ${
-                  i === step ? 'text-turf' : 'text-slate-green'
-                }`}
-              >
-                {label}
-              </span>
-              {i < STEPS.length - 1 && <div className="w-8 h-px bg-pastel mx-1" />}
+              {i < STEPS.length - 1 && (
+                <div className={`flex-1 h-px mx-3 ${i < step ? 'bg-green/40' : 'bg-pastel/60'}`} />
+              )}
             </div>
           ))}
         </div>
