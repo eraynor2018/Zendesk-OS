@@ -54,14 +54,19 @@ export default function TicketUploader({ onNext }: TicketUploaderProps) {
         onDrop={handleDrop}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${
+        className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-all ${
           isDragging
-            ? 'border-green bg-green/10'
-            : 'border-pastel hover:border-slate-green'
+            ? 'border-green bg-green/5 shadow-inner'
+            : 'border-pastel hover:border-green/40 hover:bg-green/[0.02]'
         }`}
       >
-        <p className="text-slate-green font-medium mb-1">Upload ticket export file</p>
-        <p className="text-slate-green/70 text-sm">
+        <div className="text-slate-green/50 mb-3">
+          <svg className="mx-auto w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
+        </div>
+        <p className="text-turf/70 font-medium mb-1">Upload ticket export file</p>
+        <p className="text-slate-green/60 text-sm">
           Drag & drop or <span className="text-green underline">click to browse</span>
         </p>
         <input

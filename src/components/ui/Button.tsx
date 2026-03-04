@@ -9,9 +9,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantMap = {
-  primary: 'bg-green hover:bg-green/90 text-white disabled:bg-green/60',
-  secondary: 'bg-pastel/50 hover:bg-pastel/60 text-turf disabled:bg-pastel/40',
-  danger: 'bg-red-700 hover:bg-red-600 text-white disabled:bg-red-900',
+  primary: 'bg-green hover:bg-green/90 text-white shadow-sm disabled:bg-green/60 disabled:shadow-none',
+  secondary: 'bg-white border border-pastel/80 hover:bg-pastel/20 text-turf shadow-sm disabled:opacity-50 disabled:shadow-none',
+  danger: 'bg-red-600 hover:bg-red-700 text-white shadow-sm disabled:bg-red-400',
   ghost: 'text-slate-green hover:text-turf hover:bg-pastel/30 disabled:opacity-50',
 };
 

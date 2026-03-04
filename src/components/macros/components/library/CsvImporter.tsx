@@ -69,15 +69,22 @@ export default function CsvImporter() {
           setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
-        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
           isDragging
-            ? 'border-green bg-green/10'
-            : 'border-pastel hover:border-slate-green'
+            ? 'border-green bg-green/5 shadow-inner'
+            : 'border-pastel hover:border-green/40 hover:bg-green/[0.02]'
         }`}
       >
-        <p className="text-slate-green text-sm">
-          Drag & drop a CSV file here, or{' '}
-          <span className="text-green underline">click to browse</span>
+        <div className="text-slate-green/50 mb-2">
+          <svg className="mx-auto w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
+        </div>
+        <p className="text-turf/70 text-sm font-medium">
+          Drag & drop a CSV file here
+        </p>
+        <p className="text-slate-green/60 text-xs mt-1">
+          or <span className="text-green underline">click to browse</span>
         </p>
         <input
           ref={inputRef}

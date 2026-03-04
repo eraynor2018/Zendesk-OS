@@ -61,7 +61,7 @@ export default function AddMacroForm() {
               onChange={(e) => setBody(e.target.value)}
               placeholder="Paste the macro body here..."
               rows={4}
-              className="w-full bg-white border border-pastel rounded-md px-3 py-2 text-turf placeholder-slate-green/70 focus:outline-none focus:border-green transition-colors resize-y"
+              className="w-full bg-white border border-pastel/80 rounded-md px-3 py-2.5 text-turf placeholder-slate-green/50 shadow-sm focus:outline-none focus:border-green focus:ring-1 focus:ring-green/20 transition-colors resize-y"
             />
           </div>
           {error && <p className="text-sm text-red-400">{error}</p>}

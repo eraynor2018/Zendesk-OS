@@ -61,10 +61,10 @@ export default function MacroSelector({ onNext, onBack }: MacroSelectorProps) {
           return (
             <label
               key={macro.id}
-              className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+              className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition-all ${
                 isSelected
-                  ? 'bg-green/10 border-green/60'
-                  : 'bg-white border-pastel hover:border-slate-green'
+                  ? 'bg-green/5 border-green/50 shadow-sm'
+                  : 'bg-white border-pastel/80 shadow-sm hover:border-green/30'
               }`}
             >
               <input

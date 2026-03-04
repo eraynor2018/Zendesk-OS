@@ -29,7 +29,7 @@ export default function TrendNoteEditor({ value, onSave }: TrendNoteEditorProps)
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           rows={3}
-          className="w-full bg-green/10 border border-green/40 rounded px-2 py-1.5 text-turf text-sm focus:outline-none focus:border-green resize-y"
+          className="w-full bg-white border border-green/30 rounded px-3 py-2 text-turf text-sm shadow-sm focus:outline-none focus:border-green focus:ring-1 focus:ring-green/20 resize-y"
         />
         <div className="flex gap-2 mt-2">
           <Button size="sm" onClick={handleSave}>Save</Button>

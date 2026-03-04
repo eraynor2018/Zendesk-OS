@@ -25,10 +25,10 @@ export default function MacroTable({ macros, onDelete }: MacroTableProps) {
   return (
     <div className="space-y-2">
       {macros.map((macro) => (
-        <Card key={macro.id} className="flex items-start justify-between gap-4">
+        <Card key={macro.id} className="!py-3.5 flex items-center justify-between gap-4">
           <div className="flex-1 min-w-0">
             <p className="text-turf font-medium text-sm truncate">{macro.title}</p>
-            <p className="text-slate-green/70 text-xs mt-0.5 font-mono truncate">
+            <p className="text-slate-green/60 text-xs mt-0.5 font-mono truncate">
               {stripHtml(macro.body).slice(0, 120)}
             </p>
           </div>

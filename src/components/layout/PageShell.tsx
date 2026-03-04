@@ -10,11 +10,11 @@ interface PageShellProps {
 export default function PageShell({ title, description, action, children }: PageShellProps) {
   return (
     <div>
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-turf">{title}</h1>
+          <h1 className="text-2xl font-bold text-turf tracking-tight">{title}</h1>
           {description && (
-            <p className="mt-1 text-slate-green text-sm">{description}</p>
+            <p className="mt-1.5 text-slate-green text-sm">{description}</p>
           )}
         </div>
         {action && <div>{action}</div>}
