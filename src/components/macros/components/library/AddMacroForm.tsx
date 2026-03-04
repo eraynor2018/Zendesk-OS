@@ -1,5 +1,6 @@
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { useApp } from '@/components/macros/context/MacroAppContext';
+import { generateTagFromTitle } from '@/lib/matching';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Card from '@/components/ui/Card';
@@ -8,9 +9,18 @@ export default function AddMacroForm() {
   const { macros, addMacro } = useApp();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [tag, setTag] = useState('');
+  const [tagTouched, setTagTouched] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+
+  // Auto-fill tag from title unless user has manually edited it
+  useEffect(() => {
+    if (!tagTouched) {
+      setTag(generateTagFromTitle(title));
+    }
+  }, [title, tagTouched]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -27,9 +37,11 @@ export default function AddMacroForm() {
       return;
     }
 
-    addMacro(title.trim(), body.trim());
+    addMacro(title.trim(), body.trim(), tag.trim() || undefined);
     setTitle('');
     setBody('');
+    setTag('');
+    setTagTouched(false);
     setSuccess(true);
     setTimeout(() => setSuccess(false), 2000);
   }
@@ -56,6 +68,12 @@ export default function AddMacroForm() {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Auto-send: No Swap ID"
+        />
+        <Input
+          label="Zendesk Tag"
+          value={tag}
+          onChange={(e) => { setTag(e.target.value); setTagTouched(true); }}
+          placeholder="e.g. auto_send_no_swap_id"
         />
         <div>
           <label className="block text-sm font-medium text-turf/80 mb-1.5">

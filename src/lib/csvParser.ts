@@ -1,8 +1,9 @@
 import Papa from 'papaparse';
+import { generateTagFromTitle } from './matching';
 
 export async function parseMacroCsv(
   file: File
-): Promise<Array<{ title: string; body: string }>> {
+): Promise<Array<{ title: string; body: string; tag: string }>> {
   return new Promise((resolve, reject) => {
     Papa.parse(file, {
       header: true,
@@ -22,6 +23,9 @@ export async function parseMacroCsv(
         const bodyKey = keys.find(
           (k) => k.trim().toLowerCase() === 'body/comment'
         );
+        const tagKey = keys.find(
+          (k) => k.trim().toLowerCase() === 'tag'
+        );
 
         if (!titleKey || !bodyKey) {
           reject(
@@ -33,10 +37,13 @@ export async function parseMacroCsv(
         }
 
         const parsed = rows
-          .map((row) => ({
-            title: (row[titleKey] || '').trim(),
-            body: (row[bodyKey] || '').trim(),
-          }))
+          .map((row) => {
+            const title = (row[titleKey] || '').trim();
+            const body = (row[bodyKey] || '').trim();
+            const csvTag = tagKey ? (row[tagKey] || '').trim() : '';
+            const tag = csvTag || generateTagFromTitle(title);
+            return { title, body, tag };
+          })
           .filter((r) => r.title.length > 0 && r.body.length > 0);
 
         resolve(parsed);

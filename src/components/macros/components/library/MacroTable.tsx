@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Macro } from '@/types';
-import { stripHtml } from '@/lib/matching';
 import Button from '@/components/ui/Button';
 
 interface MacroTableProps {
@@ -33,7 +32,7 @@ export default function MacroTable({ macros, onDelete }: MacroTableProps) {
           <div className="flex-1 min-w-0">
             <p className="text-turf font-medium text-sm truncate">{macro.title}</p>
             <p className="text-slate-green/50 text-xs mt-0.5 font-mono truncate">
-              {stripHtml(macro.body).slice(0, 100)}
+              tag: {macro.tag || 'none'}
             </p>
           </div>
           <div className="flex-shrink-0">

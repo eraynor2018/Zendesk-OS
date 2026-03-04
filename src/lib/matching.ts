@@ -8,41 +8,15 @@ export function stripZendeskVariables(text: string): string {
   return text.replace(/\{\{[^}]+\}\}/g, '').replace(/\s+/g, ' ').trim();
 }
 
-export function extractPhrases(text: string): string[] {
-  const cleaned = stripZendeskVariables(stripHtml(text));
-  const chunks = cleaned.split(/[.!?\n]+/);
-  const phrases: string[] = [];
-
-  for (const chunk of chunks) {
-    const trimmed = chunk.trim();
-    if (trimmed.length > 20) {
-      if (trimmed.length > 200) {
-        const subChunks = trimmed.split(/[,;]+/);
-        for (const sub of subChunks) {
-          const s = sub.trim();
-          if (s.length > 20) phrases.push(s);
-        }
-      } else {
-        phrases.push(trimmed);
-      }
-    }
-  }
-
-  return [...new Set(phrases)];
+export function generateTagFromTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }
 
-export function ticketMatchesMacro(ticket: Ticket, phrases: string[]): boolean {
-  for (const comment of ticket.comments) {
-    const plainBody = (comment.plain_body || '').toLowerCase();
-    const body = (comment.body || '').toLowerCase();
-    for (const phrase of phrases) {
-      const lowerPhrase = phrase.toLowerCase();
-      if (plainBody.includes(lowerPhrase) || body.includes(lowerPhrase)) {
-        return true;
-      }
-    }
-  }
-  return false;
+export function ticketHasMacroTag(ticket: Ticket, tag: string): boolean {
+  return ticket.tags.includes(tag);
 }
 
 export function matchMacrosToTickets(
@@ -53,10 +27,13 @@ export function matchMacrosToTickets(
   const unmatched: Macro[] = [];
 
   for (const macro of macros) {
-    const phrases = extractPhrases(macro.body);
-    const matchedTickets = phrases.length > 0
-      ? tickets.filter((t) => ticketMatchesMacro(t, phrases))
-      : [];
+    const tag = macro.tag;
+    if (!tag) {
+      unmatched.push(macro);
+      continue;
+    }
+
+    const matchedTickets = tickets.filter((t) => ticketHasMacroTag(t, tag));
 
     if (matchedTickets.length > 0) {
       matched.push({ macro, matchedTickets });
