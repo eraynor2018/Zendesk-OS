@@ -258,29 +258,52 @@ export default function ZendeskReportGenerator() {
       setFetchLoading(false);
     }
 
-    // Await search results and count by assignee
-    // (Zendesk's "Tickets solved" metric counts by assignee, not by who
-    // performed the solve action — per-ticket audits overcounted LTVplus)
+    // Await search results, then run a SINGLE audit call for all tickets.
+    // The near-perfect results (Red=214/213, LTVplus=102/101) came from
+    // auditing all tickets in one process — no rate limit competition.
+    // The search is separate so the audit gets the full 60s budget.
     try {
       const searchResponse = await searchPromise;
       if (!searchResponse.ok) {
         const errData = await searchResponse.json().catch(() => ({}));
         throw new Error(errData.error || `Search error: ${searchResponse.status}`);
       }
-      const { tickets, users } = await searchResponse.json();
+      const { tickets, users: assigneeUsers } = await searchResponse.json();
 
-      // Count by assignee_id, filtering out non-agent roles
+      // Single audit call with ALL ticket IDs — no chunking
+      const ticketIds = tickets.map((t) => t.id);
+      const auditResponse = await fetch(
+        `/api/zendesk-agents?mode=audit&ticketIds=${ticketIds.join(",")}`
+      );
+
+      let allSolvers = {};
+      const allUsers = { ...assigneeUsers };
+
+      if (auditResponse.ok) {
+        const auditData = await auditResponse.json();
+        allSolvers = auditData.solvers || {};
+        Object.assign(allUsers, auditData.users || {});
+      }
+
+      // Compute agent solve counts using audit solver with assignee fallback
       const agentIdCounts = {};
       for (const ticket of tickets) {
-        const assigneeId = ticket.assignee_id;
-        if (assigneeId && users[assigneeId]?.role !== "end-user") {
-          agentIdCounts[assigneeId] = (agentIdCounts[assigneeId] || 0) + 1;
+        let solverId = allSolvers[ticket.id] || ticket.assignee_id;
+
+        // If solver is an end-user, fall back to ticket assignee
+        if (solverId && allUsers[solverId]?.role === "end-user") {
+          solverId = ticket.assignee_id;
+        }
+
+        // Only count if final solver is NOT an end-user
+        if (solverId && allUsers[solverId]?.role !== "end-user") {
+          agentIdCounts[solverId] = (agentIdCounts[solverId] || 0) + 1;
         }
       }
 
       const agentsList = Object.entries(agentIdCounts)
         .map(([id, solved]) => ({
-          name: users[id]?.name || `Agent ${id}`,
+          name: allUsers[id]?.name || `Agent ${id}`,
           solved,
         }))
         .sort((a, b) => b.solved - a.solved);
