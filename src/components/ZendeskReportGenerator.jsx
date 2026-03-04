@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { jsPDF } from "jspdf";
 
 const INITIAL_AGENTS = [
   { name: "Red", solved: "" },
@@ -394,6 +395,11 @@ export default function ZendeskReportGenerator() {
     return `through ${formatDate(endDate)}`;
   }, [csatEnd]);
 
+  const adaDashboardUrl = useMemo(() => {
+    if (!weekStart || !weekEnd) return null;
+    return `https://sidelineswap.ada.support/?sd=${weekStart}&ed=${weekEnd}`;
+  }, [weekStart, weekEnd]);
+
   const generateSlackReport = useCallback(() => {
     const activeMacros = macros.filter(m => parseInt(m.count) > 0).sort((a, b) => parseInt(b.count) - parseInt(a.count));
     const activeAgents = agents.filter(a => parseInt(a.solved) > 0).sort((a, b) => parseInt(b.solved) - parseInt(a.solved));
@@ -430,6 +436,182 @@ export default function ZendeskReportGenerator() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const handleDownloadPDF = useCallback(() => {
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const margin = 48;
+    const colW = (pageW - margin * 2 - 24) / 2;
+    let y = 48;
+
+    const brandGreen = [2, 200, 116];
+    const darkGreen = [37, 60, 50];
+    const gray = [97, 113, 106];
+
+    const addPageIfNeeded = (need) => {
+      if (y + need > doc.internal.pageSize.getHeight() - 48) {
+        doc.addPage();
+        y = 48;
+      }
+    };
+
+    // Header bar
+    doc.setFillColor(...darkGreen);
+    doc.rect(0, 0, pageW, 56, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(255, 255, 255);
+    doc.text("Zendesk OS", margin, 28);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(180, 200, 190);
+    doc.text("Weekly Report", margin, 42);
+
+    // Date range badge
+    if (weekStart && weekEnd) {
+      const startD = new Date(weekStart + "T12:00:00");
+      const endD = new Date(weekEnd + "T12:00:00");
+      const label = `${formatDate(startD)} - ${formatDate(endD)}`;
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text(label, pageW - margin, 34, { align: "right" });
+    }
+    y = 76;
+
+    // Section helper
+    const drawSection = (title) => {
+      addPageIfNeeded(40);
+      doc.setFillColor(...brandGreen);
+      doc.rect(margin, y, 3, 16, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(...darkGreen);
+      doc.text(title.toUpperCase(), margin + 12, y + 12);
+      y += 28;
+    };
+
+    // Stat box helper
+    const drawStat = (x, label, value, width) => {
+      doc.setFillColor(248, 255, 252);
+      doc.setDrawColor(232, 240, 236);
+      doc.roundedRect(x, y, width, 44, 4, 4, "FD");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...gray);
+      doc.text(label.toUpperCase(), x + 10, y + 14);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(...darkGreen);
+      doc.text(String(value), x + 10, y + 34);
+    };
+
+    // ── Ticket Volume ──
+    drawSection("Ticket Volume");
+    const statW = (pageW - margin * 2 - 12) / 2;
+    drawStat(margin, "Created Tickets", created.toLocaleString(), statW);
+    drawStat(margin + statW + 12, "Solved Tickets", solved.toLocaleString(), statW);
+    y += 56;
+
+    // ── Automation ──
+    drawSection("Automation");
+    const adaStats = [
+      { label: "Ada Conversations", value: parseInt(adaConversations) ? parseInt(adaConversations).toLocaleString() : "0" },
+      { label: "Containment Rate", value: `${adaContainment || "0"}%` },
+      { label: "Ada Tickets", value: parseInt(adaTickets) ? parseInt(adaTickets).toLocaleString() : "0" },
+    ];
+    const adaW = (pageW - margin * 2 - 24) / 3;
+    adaStats.forEach((s, i) => {
+      drawStat(margin + i * (adaW + 12), s.label, s.value, adaW);
+    });
+    y += 56;
+
+    // Triggers
+    addPageIfNeeded(triggers.length * 16 + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...gray);
+    doc.text("AUTO-RESPONSE TRIGGERS (7D)", margin, y + 4);
+    y += 14;
+    triggers.forEach((t, i) => {
+      const col = i % 2;
+      const xPos = margin + col * (colW + 24);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...darkGreen);
+      doc.text(t.label, xPos, y + 10);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(parseInt(t.count) || 0), xPos + colW - 4, y + 10, { align: "right" });
+      if (col === 1 || i === triggers.length - 1) y += 16;
+    });
+
+    // Automation stats
+    y += 8;
+    const autoW2 = (pageW - margin * 2 - 12) / 2;
+    drawStat(margin, "Trigger Total", triggerSum, autoW2);
+    drawStat(margin + autoW2 + 12, "Automation %", `${automationPct}%`, autoW2);
+    y += 56;
+
+    // ── Agent Solves ──
+    drawSection("Agent Solves");
+    const activeAgents = agents.filter(a => parseInt(a.solved) > 0).sort((a, b) => parseInt(b.solved) - parseInt(a.solved));
+    activeAgents.forEach((a, i) => {
+      addPageIfNeeded(18);
+      const col = i % 2;
+      const xPos = margin + col * (colW + 24);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...darkGreen);
+      doc.text(a.name, xPos, y + 10);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(parseInt(a.solved).toLocaleString()), xPos + colW - 4, y + 10, { align: "right" });
+      if (col === 1 || i === activeAgents.length - 1) y += 16;
+    });
+    y += 8;
+
+    // ── Macro Usage ──
+    drawSection("Macro Usage");
+    const activeMacros = macros.filter(m => parseInt(m.count) > 0).sort((a, b) => parseInt(b.count) - parseInt(a.count));
+    activeMacros.forEach((m, i) => {
+      addPageIfNeeded(18);
+      const col = i % 2;
+      const xPos = margin + col * (colW + 24);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...darkGreen);
+      doc.text(m.label, xPos, y + 10);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(parseInt(m.count)), xPos + colW - 4, y + 10, { align: "right" });
+      if (col === 1 || i === activeMacros.length - 1) y += 16;
+    });
+    y += 8;
+    const macW2 = (pageW - margin * 2 - 12) / 2;
+    addPageIfNeeded(52);
+    drawStat(margin, "Macro Total", macroSum, macW2);
+    drawStat(margin + macW2 + 12, "Coverage %", `${macroCoveragePct}%`, macW2);
+    y += 56;
+
+    // ── CSAT ──
+    drawSection("Customer Satisfaction");
+    addPageIfNeeded(52);
+    const csW = (pageW - margin * 2 - 24) / 3;
+    drawStat(margin, "CSAT Score", `${csatScore || "0"}%`, csW);
+    drawStat(margin + csW + 12, "Good Ratings", csatGood || "0", csW);
+    drawStat(margin + (csW + 12) * 2, "Bad Ratings", csatBad || "0", csW);
+    y += 56;
+
+    if (csatDateLabel) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...gray);
+      doc.text(`Satisfaction ${csatDateLabel}  |  ${csatTotal} total ratings`, margin, y);
+    }
+
+    // Generate filename
+    const fname = weekStart && weekEnd
+      ? `zendesk-report-${weekStart}-to-${weekEnd}.pdf`
+      : "zendesk-report.pdf";
+    doc.save(fname);
+  }, [weekStart, weekEnd, created, solved, adaConversations, adaContainment, adaTickets, triggers, agents, macros, triggerSum, automationPct, macroSum, macroCoveragePct, csatScore, csatGood, csatBad, csatTotal, csatDateLabel]);
 
   return (
     <div style={{
@@ -484,8 +666,24 @@ export default function ZendeskReportGenerator() {
             onClick={handleCopy}
             style={{
               padding: "8px 16px",
-              background: copied ? "#02C874" : "#fff",
-              color: copied ? "#253C32" : "#253C32",
+              background: copied ? "#02C874" : "rgba(255,255,255,0.1)",
+              color: copied ? "#253C32" : "#fff",
+              border: "none",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            {copied ? "✓ Copied!" : "Copy to Slack"}
+          </button>
+          <button
+            onClick={handleDownloadPDF}
+            style={{
+              padding: "8px 16px",
+              background: "#fff",
+              color: "#253C32",
               border: "none",
               borderRadius: "6px",
               fontSize: "13px",
@@ -494,7 +692,7 @@ export default function ZendeskReportGenerator() {
               transition: "all 0.15s",
             }}
           >
-            {copied ? "✓ Copied!" : "Copy to Slack"}
+            Download PDF
           </button>
         </div>
       </div>
@@ -609,10 +807,39 @@ export default function ZendeskReportGenerator() {
 
         {/* Automation */}
         <Section title="Automation" icon="🤖">
-          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "16px", alignItems: "flex-end" }}>
             <InputField label="Ada Engaged Conversations" value={adaConversations} onChange={setAdaConversations} />
             <InputField label="Ada Containment Rate" value={adaContainment} onChange={setAdaContainment} suffix="%" />
             <InputField label="Ada Tickets" value={adaTickets} onChange={setAdaTickets} />
+            {adaDashboardUrl && (
+              <a
+                href={adaDashboardUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  padding: "8px 14px",
+                  background: "#f8fffc",
+                  border: "1px solid #CFDCD6",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: 500,
+                  color: "#253C32",
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                  cursor: "pointer",
+                  transition: "border-color 0.15s",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  height: "fit-content",
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = "#02C874"}
+                onMouseLeave={e => e.currentTarget.style.borderColor = "#CFDCD6"}
+              >
+                Open Ada Dashboard
+                <span style={{ fontSize: "10px" }}>&#8599;</span>
+              </a>
+            )}
           </div>
           <div style={{ marginBottom: "8px" }}>
             <div style={{ fontSize: "12px", fontWeight: 500, color: "#61716A", marginBottom: "8px" }}>Auto-Response Triggers (7d)</div>
