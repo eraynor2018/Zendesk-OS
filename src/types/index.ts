@@ -2,6 +2,7 @@ export interface Macro {
   id: string;
   title: string;
   body: string;
+  tag: string;
 }
 
 export interface Ticket {

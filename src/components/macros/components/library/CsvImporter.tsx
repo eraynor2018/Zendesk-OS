@@ -78,7 +78,7 @@ export default function CsvImporter() {
           Drag & drop or <span className="text-green cursor-pointer">browse files</span>
         </p>
         <p className="text-slate-green/50 text-[11px] mt-2">
-          Columns: <code className="bg-pastel/30 px-1 rounded">Macro Title</code> and <code className="bg-pastel/30 px-1 rounded">Body/Comment</code>
+          Columns: <code className="bg-pastel/30 px-1 rounded">Macro Title</code>, <code className="bg-pastel/30 px-1 rounded">Body/Comment</code>, and optionally <code className="bg-pastel/30 px-1 rounded">Tag</code>
         </p>
         <input
           ref={inputRef}

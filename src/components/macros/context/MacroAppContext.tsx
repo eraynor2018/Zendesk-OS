@@ -24,8 +24,8 @@ interface AnalysisProgress {
 
 interface AppContextValue {
   macros: Macro[];
-  addMacro: (title: string, body: string) => void;
-  addMacros: (incoming: Array<{ title: string; body: string }>) => void;
+  addMacro: (title: string, body: string, tag?: string) => void;
+  addMacros: (incoming: Array<{ title: string; body: string; tag?: string }>) => void;
   deleteMacro: (id: string) => void;
   searchMacros: (query: string) => Macro[];
 
