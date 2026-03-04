@@ -259,10 +259,10 @@ export default function ZendeskReportGenerator() {
       setFetchLoading(false);
     }
 
-    // Await search results, then run a SINGLE audit call for all tickets.
-    // The near-perfect results (Red=214/213, LTVplus=102/101) came from
-    // auditing all tickets in one process — no rate limit competition.
-    // The search is separate so the audit gets the full 60s budget.
+    // Await search results, then run SEQUENTIAL audit calls.
+    // A single call with ~530 tickets hits the 50s deadline inconsistently.
+    // Two sequential calls of ~265 each stay well within budget with no
+    // rate limit competition, giving consistent results every time.
     try {
       const searchResponse = await searchPromise;
       if (!searchResponse.ok) {
@@ -271,19 +271,29 @@ export default function ZendeskReportGenerator() {
       }
       const { tickets, users: assigneeUsers } = await searchResponse.json();
 
-      // Single audit call with ALL ticket IDs — no chunking
+      // Split ticket IDs into 2 halves for sequential audit calls
       const ticketIds = tickets.map((t) => t.id);
-      const auditResponse = await fetch(
-        `/api/zendesk-agents?mode=audit&ticketIds=${ticketIds.join(",")}`
-      );
+      const mid = Math.ceil(ticketIds.length / 2);
+      const batches = [ticketIds.slice(0, mid), ticketIds.slice(mid)];
 
+      // Run audit batches SEQUENTIALLY — no rate limit competition
       let allSolvers = {};
       const allUsers = { ...assigneeUsers };
 
-      if (auditResponse.ok) {
-        const auditData = await auditResponse.json();
-        allSolvers = auditData.solvers || {};
-        Object.assign(allUsers, auditData.users || {});
+      for (const batch of batches) {
+        if (batch.length === 0) continue;
+        try {
+          const auditResponse = await fetch(
+            `/api/zendesk-agents?mode=audit&ticketIds=${batch.join(",")}`
+          );
+          if (auditResponse.ok) {
+            const auditData = await auditResponse.json();
+            Object.assign(allSolvers, auditData.solvers || {});
+            Object.assign(allUsers, auditData.users || {});
+          }
+        } catch (e) {
+          console.warn("Audit batch failed, using assignee fallback:", e.message);
+        }
       }
 
       // Compute agent solve counts using audit solver with assignee fallback
