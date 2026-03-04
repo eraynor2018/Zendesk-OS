@@ -225,6 +225,12 @@ export default function ZendeskReportGenerator() {
     setCsatEnd(toYMD(lastFri));
   }, [weekEnd]);
 
+  // Auto-sum solved tickets from agent solves
+  useEffect(() => {
+    const total = agents.reduce((sum, a) => sum + (parseInt(a.solved) || 0), 0);
+    setSolvedTickets(total > 0 ? total.toString() : "");
+  }, [agents]);
+
   const fetchZendeskData = useCallback(async () => {
     if (!weekStart || !weekEnd) {
       setFetchError("Please select both week start and week end dates.");
