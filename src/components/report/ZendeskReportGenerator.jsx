@@ -543,93 +543,61 @@ export default function ZendeskReportGenerator() {
 
   return (
     <div style={{
-      minHeight: "100vh",
-      background: "#f4f7f5",
-      fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+      maxWidth: "900px",
+      margin: "0 auto",
+      padding: "24px 24px 60px",
     }}>
-      {/* Header */}
-      <div style={{
-        background: "#253C32",
-        padding: "20px 32px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{
-            width: "32px",
-            height: "32px",
-            borderRadius: "8px",
-            background: "#02C874",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "16px",
-            fontWeight: 700,
+      {/* Toolbar */}
+      <div style={{ display: "flex", gap: "8px", marginBottom: "20px", justifyContent: "flex-end" }}>
+        <button
+          onClick={() => setShowPreview(!showPreview)}
+          style={{
+            padding: "8px 16px",
+            background: showPreview ? "#02C874" : "#253C32",
+            color: showPreview ? "#253C32" : "#fff",
+            border: "none",
+            borderRadius: "6px",
+            fontSize: "13px",
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          {showPreview ? "✓ Preview" : "Preview"}
+        </button>
+        <button
+          onClick={handleCopy}
+          style={{
+            padding: "8px 16px",
+            background: copied ? "#02C874" : "#253C32",
+            color: copied ? "#253C32" : "#fff",
+            border: "none",
+            borderRadius: "6px",
+            fontSize: "13px",
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          {copied ? "✓ Copied!" : "Copy to Slack"}
+        </button>
+        <button
+          onClick={handleDownloadPDF}
+          style={{
+            padding: "8px 16px",
+            background: "#CFDCD6",
             color: "#253C32",
-          }}>Z</div>
-          <div>
-            <div style={{ color: "#fff", fontSize: "16px", fontWeight: 600 }}>Zendesk OS</div>
-            <div style={{ color: "#61716A", fontSize: "11px" }}>Weekly Report Generator</div>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button
-            onClick={() => setShowPreview(!showPreview)}
-            style={{
-              padding: "8px 16px",
-              background: showPreview ? "#02C874" : "rgba(255,255,255,0.1)",
-              color: showPreview ? "#253C32" : "#fff",
-              border: "none",
-              borderRadius: "6px",
-              fontSize: "13px",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
-          >
-            {showPreview ? "✓ Preview" : "Preview"}
-          </button>
-          <button
-            onClick={handleCopy}
-            style={{
-              padding: "8px 16px",
-              background: copied ? "#02C874" : "rgba(255,255,255,0.1)",
-              color: copied ? "#253C32" : "#fff",
-              border: "none",
-              borderRadius: "6px",
-              fontSize: "13px",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
-          >
-            {copied ? "✓ Copied!" : "Copy to Slack"}
-          </button>
-          <button
-            onClick={handleDownloadPDF}
-            style={{
-              padding: "8px 16px",
-              background: "#fff",
-              color: "#253C32",
-              border: "none",
-              borderRadius: "6px",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
-          >
-            Download PDF
-          </button>
-        </div>
+            border: "none",
+            borderRadius: "6px",
+            fontSize: "13px",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          Download PDF
+        </button>
       </div>
-
-      <div style={{
-        maxWidth: "900px",
-        margin: "0 auto",
-        padding: "24px 24px 60px",
-      }}>
         {/* Date Range */}
         <div style={{
           display: "flex",
@@ -1068,7 +1036,6 @@ export default function ZendeskReportGenerator() {
             </pre>
           </div>
         )}
-      </div>
     </div>
   );
 }

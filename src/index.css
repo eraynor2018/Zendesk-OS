@@ -1,3 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-turf: #253C32;
+  --color-slate-green: #61716A;
+  --color-green: #02C874;
+  --color-pastel: #CFDCD6;
+  --color-bg: #f4f7f5;
+  --color-card: #ffffff;
+}
+
 *,
 *::before,
 *::after {
