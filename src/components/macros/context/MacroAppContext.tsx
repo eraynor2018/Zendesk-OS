@@ -15,6 +15,7 @@ import {
 import useMacros from '@/hooks/useMacros';
 import useApiKey from '@/hooks/useApiKey';
 import { matchMacrosToTickets } from '@/lib/matching';
+import { authFetch } from '@/lib/api';
 
 interface AnalysisProgress {
   current: number;
@@ -134,7 +135,7 @@ export function MacroAppProvider({ children }: { children: ReactNode }) {
         };
         if (apiKey) headers['X-Api-Key'] = apiKey;
 
-        const res = await fetch('/api/analyze', {
+        const res = await authFetch('/api/analyze', {
           method: 'POST',
           headers,
           body: JSON.stringify({

@@ -1,4 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
+import { useAuth } from '../../lib/auth';
 
 const navItems = [
   {
@@ -34,6 +35,7 @@ const navItems = [
 export default function Sidebar() {
   const location = useLocation();
   const isMacrosActive = location.pathname.startsWith('/macros');
+  const { user, signOut } = useAuth();
 
   return (
     <aside
@@ -135,6 +137,33 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* User & Sign Out */}
+      {user && (
+        <div style={{ padding: '16px 16px 20px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ fontSize: 12, color: '#61716A', marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {user.email}
+          </div>
+          <button
+            onClick={signOut}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 6,
+              border: 'none',
+              background: 'rgba(255,255,255,0.06)',
+              color: '#61716A',
+              fontSize: 13,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = '#fff'; }}
+            onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#61716A'; }}
+          >
+            Sign out
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

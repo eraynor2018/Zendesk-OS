@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { jsPDF } from "jspdf";
+import { authFetch } from "../../lib/api";
 
 const INITIAL_AGENTS = [
   { name: "Red", solved: "" },
@@ -240,7 +241,7 @@ export default function ZendeskReportGenerator() {
     setFetchError("");
     try {
       const params = new URLSearchParams({ weekStart, weekEnd });
-      const response = await fetch(`/api/zendesk-report?${params}`);
+      const response = await authFetch(`/api/zendesk-report?${params}`);
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || `Server error: ${response.status}`);
@@ -275,7 +276,7 @@ export default function ZendeskReportGenerator() {
     setFetchError("");
     try {
       const params = new URLSearchParams({ csatOnly: "true", csatStart, csatEnd });
-      const response = await fetch(`/api/zendesk-report?${params}`);
+      const response = await authFetch(`/api/zendesk-report?${params}`);
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || `Server error: ${response.status}`);
