@@ -3,6 +3,9 @@ import { useAuth } from '../../lib/auth';
 export default function LoginPage() {
   const { signIn } = useAuth();
 
+  const params = new URLSearchParams(window.location.search);
+  const error = params.get('error');
+
   return (
     <div
       style={{
@@ -77,6 +80,17 @@ export default function LoginPage() {
           </svg>
           Sign in with Google
         </button>
+
+        {error === 'unauthorized' && (
+          <p style={{ fontSize: 13, color: '#e53e3e', marginTop: 16 }}>
+            Only @sidelineswap.com accounts are allowed.
+          </p>
+        )}
+        {error && error !== 'unauthorized' && (
+          <p style={{ fontSize: 13, color: '#e53e3e', marginTop: 16 }}>
+            Sign in failed. Please try again.
+          </p>
+        )}
 
         <p style={{ fontSize: 12, color: '#999', marginTop: 24 }}>
           Only @sidelineswap.com accounts are allowed.
