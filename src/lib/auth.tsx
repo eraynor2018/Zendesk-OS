@@ -8,6 +8,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  authEnabled: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -67,8 +68,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  const authEnabled = !!supabase;
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, authEnabled, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

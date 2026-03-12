@@ -24,9 +24,9 @@ function MacroLayout() {
 }
 
 function ProtectedApp() {
-  const { user, loading } = useAuth();
+  const { user, loading, authEnabled } = useAuth();
 
-  if (loading) {
+  if (authEnabled && loading) {
     return (
       <div style={{ minHeight: '100vh', background: '#253C32', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ color: '#61716A', fontSize: 14 }}>Loading...</div>
@@ -34,7 +34,7 @@ function ProtectedApp() {
     );
   }
 
-  if (!user) {
+  if (authEnabled && !user) {
     return <LoginPage />;
   }
 
