@@ -1,17 +1,7 @@
-import { supabase } from './supabase';
-
 /**
- * Wrapper around fetch that attaches the Supabase access token.
+ * Wrapper around fetch. Cookies are sent automatically (same-origin).
+ * Kept as a wrapper for consistency and future extensibility.
  */
 export async function authFetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
-  const headers = new Headers(init?.headers);
-
-  if (supabase) {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      headers.set('Authorization', `Bearer ${session.access_token}`);
-    }
-  }
-
-  return fetch(input, { ...init, headers });
+  return fetch(input, { ...init, credentials: 'same-origin' });
 }

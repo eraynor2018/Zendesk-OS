@@ -1,27 +1,60 @@
-import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
+const COOKIE_NAME = 'zos_session';
 const ALLOWED_DOMAIN = 'sidelineswap.com';
 
-/**
- * Verify the Supabase access token from the Authorization header.
- * Returns the user if valid and from the allowed domain, or null.
- */
-export async function verifyAuth(req) {
-  const authHeader = req.headers['authorization'];
-  if (!authHeader?.startsWith('Bearer ')) return null;
-
-  const token = authHeader.slice(7);
-
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) return null;
-
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-
-  if (error || !user) return null;
-  if (!user.email?.endsWith(`@${ALLOWED_DOMAIN}`)) return null;
-
-  return user;
+function parseCookies(req) {
+  const header = req.headers.cookie || '';
+  const cookies = {};
+  header.split(';').forEach((pair) => {
+    const [name, ...rest] = pair.trim().split('=');
+    if (name) cookies[name] = rest.join('=');
+  });
+  return cookies;
 }
+
+/**
+ * Verify the session cookie. Returns user object or null.
+ */
+export function verifySession(req) {
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret) return null;
+
+  const cookies = parseCookies(req);
+  const token = cookies[COOKIE_NAME];
+  if (!token) return null;
+
+  const [encoded, signature] = token.split('.');
+  if (!encoded || !signature) return null;
+
+  // Verify signature
+  const expected = crypto
+    .createHmac('sha256', sessionSecret)
+    .update(encoded)
+    .digest('base64url');
+
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString());
+
+    // Check expiry
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+
+    // Check domain
+    if (!payload.email?.endsWith(`@${ALLOWED_DOMAIN}`)) {
+      return null;
+    }
+
+    return { email: payload.email, name: payload.name, picture: payload.picture };
+  } catch {
+    return null;
+  }
+}
+
+// Backwards-compatible export name
+export const verifyAuth = verifySession;
