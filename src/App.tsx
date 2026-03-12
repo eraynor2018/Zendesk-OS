@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './lib/auth';
 import AppShell from './components/layout/AppShell';
+import LoginPage from './components/auth/LoginPage';
 import ZendeskReportGenerator from './components/report/ZendeskReportGenerator';
 import { MacroAppProvider } from './components/macros/context/MacroAppContext';
 import MacroLibraryPage from './components/macros/pages/MacroLibraryPage';
@@ -21,16 +23,38 @@ function MacroLayout() {
   );
 }
 
+function ProtectedApp() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#253C32', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: '#61716A', fontSize: 14 }}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  return (
+    <AppShell>
+      <Routes>
+        <Route path="/" element={<Navigate to="/report" replace />} />
+        <Route path="/report" element={<ZendeskReportGenerator />} />
+        <Route path="/macros/*" element={<MacroLayout />} />
+      </Routes>
+    </AppShell>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <AppShell>
-        <Routes>
-          <Route path="/" element={<Navigate to="/report" replace />} />
-          <Route path="/report" element={<ZendeskReportGenerator />} />
-          <Route path="/macros/*" element={<MacroLayout />} />
-        </Routes>
-      </AppShell>
+      <AuthProvider>
+        <ProtectedApp />
+      </AuthProvider>
     </BrowserRouter>
   );
 }
